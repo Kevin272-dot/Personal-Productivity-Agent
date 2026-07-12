@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+psql 'postgresql://neondb_owner:npg_BCXkzr4b2nKL@ep-fancy-bread-ahy48e08-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' -Atc "select 'users' as table_name, count(*) from users union all select 'daily_plans', count(*) from daily_plans union all select 'tasks', count(*) from tasks union all select 'focus_sessions', count(*) from focus_sessions union all select 'reminder_history', count(*) from reminder_history order by table_name;"

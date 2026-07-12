@@ -1,0 +1,69 @@
+generator client {
+	provider = "prisma-client-js"
+}
+
+datasource db {
+	provider = "postgresql"
+}
+
+model User {
+	id            String         @id @default(cuid())
+	telegramId    String         @unique
+	name          String?
+	timezone      String         @default("UTC")
+	createdAt     DateTime       @default(now())
+	dailyPlans    DailyPlan[]
+	focusSessions FocusSession[]
+
+	@@map("users")
+}
+
+model DailyPlan {
+	id              String            @id @default(cuid())
+	deadline        DateTime
+	completed       Boolean           @default(false)
+	createdAt       DateTime          @default(now())
+	userId          String
+	user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+	tasks           Task[]
+	reminderHistory ReminderHistory[]
+
+	@@map("daily_plans")
+}
+
+model Task {
+	id            String         @id @default(cuid())
+	title         String
+	priority      String         @default("normal")
+	completed     Boolean        @default(false)
+	completedAt   DateTime?
+	createdAt     DateTime       @default(now())
+	dailyPlanId   String
+	dailyPlan     DailyPlan      @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+	focusSessions FocusSession[]
+
+	@@map("tasks")
+}
+
+model FocusSession {
+	id         String   @id @default(cuid())
+	duration   Int
+	startedAt  DateTime
+	endedAt    DateTime?
+	completed  Boolean  @default(false)
+	taskId     String
+	task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+	@@map("focus_sessions")
+}
+
+model ReminderHistory {
+	id          String    @id @default(cuid())
+	type        String
+	urgency     String
+	sentAt      DateTime  @default(now())
+	dailyPlanId String
+	dailyPlan   DailyPlan @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+
+	@@map("reminder_history")
+}

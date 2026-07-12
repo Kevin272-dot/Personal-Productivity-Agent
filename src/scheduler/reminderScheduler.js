@@ -1,60 +1,103 @@
 const cron = require("node-cron");
+
 const { REMINDER_INTERVALS, SCHEDULER_CRON } = require("../config/constants");
+
 const { getTaskList, updateTaskList } = require("../services/taskManager");
+
 const { calculateReminder } = require("../services/reminderService");
+
 const { decideReminder } = require("../services/behaviourEngine");
 
+const {
+  createReminderRepository,
+} = require("../../repositories/reminderRepository");
+
+const logger = require("../utils/logger");
+
+let reminderRepository = null;
+
+function getReminderRepository() {
+  if (!reminderRepository) {
+    reminderRepository = createReminderRepository();
+  }
+
+  return reminderRepository;
+}
+
 function shouldSendNow(taskList, urgency) {
-  const intervalMinutes =
-    REMINDER_INTERVALS[urgency] ?? REMINDER_INTERVALS.MEDIUM;
+  const cooldown = REMINDER_INTERVALS[urgency] ?? REMINDER_INTERVALS.MEDIUM;
 
   if (!taskList.lastReminderAt) {
     return true;
   }
 
-  const elapsedMs = Date.now() - new Date(taskList.lastReminderAt).getTime();
-  const requiredMs = intervalMinutes * 60 * 1000;
+  const elapsedMinutes =
+    (Date.now() - new Date(taskList.lastReminderAt).getTime()) / (1000 * 60);
 
-  return elapsedMs >= requiredMs;
+  return elapsedMinutes >= cooldown;
+}
+
+async function sendReminder(bot, taskList, stats) {
+  const decision = decideReminder(taskList, stats);
+
+  if (!decision.shouldSend) {
+    logger.info("SCHEDULER", "Behavior engine decided not to send a reminder.");
+    return;
+  }
+
+  await bot.sendMessage(taskList.chatId, decision.message);
+
+  await getReminderRepository().createReminder({
+    type: decision.type,
+    urgency: stats.urgency,
+    dailyPlanId: taskList.dbId,
+  });
+
+  logger.success("SCHEDULER", `${decision.type} reminder sent.`);
 }
 
 function startReminderScheduler(bot) {
+  logger.success("SCHEDULER", "Reminder scheduler started.");
+
   cron.schedule(SCHEDULER_CRON, async () => {
     try {
-      const taskList = getTaskList();
+      logger.info("SCHEDULER", "Running reminder cycle...");
 
-      if (!taskList || !taskList.chatId) {
+      const taskList = await getTaskList();
+
+      if (!taskList) {
+        logger.info("SCHEDULER", "No active task list.");
         return;
       }
 
       const stats = calculateReminder(taskList);
 
-      if (!stats || stats.remainingTasks === 0) {
+      if (!stats) {
+        logger.warn("SCHEDULER", "Reminder calculation failed.");
+        return;
+      }
+
+      if (stats.remainingTasks === 0) {
+        logger.success("SCHEDULER", "All tasks completed.");
+
+        return;
+      }
+
+      if (stats.overdue) {
+        logger.warn("SCHEDULER", "Deadline has passed.");
+
         return;
       }
 
       if (!shouldSendNow(taskList, stats.urgency)) {
+        logger.info("SCHEDULER", "Reminder skipped (cooldown).");
+
         return;
       }
 
-      const decision = decideReminder(taskList, stats);
-
-      if (!decision.shouldSend) {
-        return;
-      }
-
-      await bot.sendMessage(taskList.chatId, decision.message);
-
-      updateTaskList({
-        lastReminderAt: new Date(),
-        lastReminderType: decision.type,
-      });
-
-      console.log(`
-        [[Reminder] ${decision.type} sent to ${taskList.chatId} | urgency=${stats.urgency}](http://_vscodecontentref_/11),
-      `);
+      await sendReminder(bot, taskList, stats);
     } catch (error) {
-      console.error("[ReminderScheduler] Failed cycle:", error.message);
+      logger.error("SCHEDULER", error.message);
     }
   });
 }

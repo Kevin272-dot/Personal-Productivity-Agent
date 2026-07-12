@@ -1,0 +1,89 @@
+const {
+  CHECK_IN,
+  MOMENTUM,
+  DISTRACTION,
+  CRITICAL,
+} = require("../data/reminderMessages");
+
+function formatHours(hours) {
+  const totalMinutes = Math.max(0, Math.round(hours * 60));
+
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+
+  if (h === 0) {
+    return `${m}m`;
+  }
+
+  if (m === 0) {
+    return `${h}h`;
+  }
+
+  return `${h}h ${m}m`;
+}
+
+function random(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+function buildCheckIn(nextTask) {
+  return `Attention
+
+Current Task
+
+${nextTask.text}`;
+}
+
+function buildMediumReminder(stats, nextTask) {
+  return `Status
+
+Completed : ${stats.completedTasks}/${stats.totalTasks}
+Remaining : ${stats.remainingTasks}
+
+Time Left : ${formatHours(stats.remainingHours)}
+
+Required Pace : ${stats.requiredPace.toFixed(1)} task(s)/hour
+
+Next
+
+${nextTask.text}`;
+}
+
+function buildHighReminder(stats, nextTask) {
+  return `Status
+
+Pressure : HIGH
+
+Completed : ${stats.completedTasks}/${stats.totalTasks}
+Remaining : ${stats.remainingTasks}
+
+Time Left : ${formatHours(stats.remainingHours)}
+
+Required Pace : ${stats.requiredPace.toFixed(1)} task(s)/hour
+
+Priority
+
+${nextTask.text}`;
+}
+
+function buildCriticalReminder(stats, nextTask) {
+  return `Deadline Near
+
+Remaining : ${stats.remainingTasks}
+
+Time Left : ${formatHours(stats.remainingHours)}
+
+Required Pace
+
+${stats.requiredPace.toFixed(1)} task(s)/hour
+
+Start
+
+${nextTask.text}`;
+}
+
+module.exports = {
+  buildCheckIn,
+  buildMediumReminder,
+  buildHighReminder,
+  buildCriticalReminder,
+};
