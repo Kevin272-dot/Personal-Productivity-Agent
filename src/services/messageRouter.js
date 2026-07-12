@@ -2,6 +2,19 @@ function classifyMessage(text) {
   const lower = text.toLowerCase().trim();
 
   if (
+    lower.startsWith("delete all") ||
+    lower.startsWith("clear all") ||
+    lower === "reset"
+  ) {
+    return "DELETE_ALL";
+  }
+
+  const deleteDaysMatch = lower.match(/^delete last (\d+) days?$/);
+  if (deleteDaysMatch) {
+    return "DELETE_DAYS";
+  }
+
+  if (
     lower.includes("today") ||
     lower.includes("tasks") ||
     lower.includes("todo") ||

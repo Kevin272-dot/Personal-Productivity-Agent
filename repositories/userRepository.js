@@ -48,6 +48,13 @@ function createUserRepository(prismaClient = getPrismaClient()) {
         returning id, telegram_id as "telegramId", name, timezone, created_at as "createdAt"
       `.then(([row]) => row);
     },
+
+    findAll() {
+      return prismaClient`
+        select id, telegram_id as "telegramId", name, timezone, created_at as "createdAt"
+        from users
+      `;
+    },
   };
 }
 

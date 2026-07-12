@@ -1,9 +1,12 @@
 const { parseMessage } = require("../services/taskParser");
-const { setTaskList, getTaskList } = require("../services/taskManager");
+const { setTaskList, getTaskList, clearTaskList } = require("../services/taskManager");
 const { completeTask } = require("../services/completionService");
 const { classifyMessage } = require("../services/messageRouter");
 const { getNextTask } = require("../services/taskSelector");
 const { getSession } = require("../focus/focusManager");
+const { ALLOWED_USERS, MAX_USERS } = require("../config/constants");
+const { createUserRepository } = require("../../repositories/userRepository");
+const { createPlanRepository } = require("../../repositories/planRepository");
 
 const { handleFocusReply } = require("../focus/focusCompletion");
 const {
@@ -24,6 +27,19 @@ const { scheduleSession } = require("../focus/focusScheduler");
 const { focusStarted } = require("../focus/focusMessages");
 
 const logger = require("../utils/logger");
+
+let userRepository = null;
+let planRepository = null;
+
+function getUserRepository() {
+  if (!userRepository) userRepository = createUserRepository();
+  return userRepository;
+}
+
+function getPlanRepository() {
+  if (!planRepository) planRepository = createPlanRepository();
+  return planRepository;
+}
 
 function registerHandlers(bot) {
   bot.onText(/\/start/, (msg) => {
@@ -53,6 +69,23 @@ Deadline tomorrow 8 PM`,
     if (!msg.text) return;
 
     if (msg.text.startsWith("/")) return;
+
+    if (ALLOWED_USERS.length > 0 && !ALLOWED_USERS.includes(msg.from.id)) {
+      bot.sendMessage(msg.chat.id, "Access denied.");
+      return;
+    }
+
+    if (MAX_USERS > 0) {
+      const existingUser = await getUserRepository().findByTelegramId(String(msg.from.id));
+      if (!existingUser) {
+        const userRepo = getUserRepository();
+        const allUsers = await userRepo.findAll();
+        if (allUsers.length >= MAX_USERS) {
+          bot.sendMessage(msg.chat.id, "Max user limit reached.");
+          return;
+        }
+      }
+    }
 
     logger.info("HANDLER", `Message from ${msg.from.first_name}`);
     logger.info("HANDLER", msg.text);
@@ -213,6 +246,53 @@ When you're ready, you can start another focus session.`,
         const current = await getTaskList(msg.chat.id);
 
         bot.sendMessage(msg.chat.id, buildGreetingResponse(current));
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "DELETE_ALL": {
+        const user = await getUserRepository().findByTelegramId(String(msg.from.id));
+
+        if (!user) {
+          bot.sendMessage(msg.chat.id, "No data found for your account.");
+          break;
+        }
+
+        const deletedCount = await getPlanRepository().deleteAllForUser(user.id);
+        await clearTaskList(msg.chat.id);
+
+        logger.success("HANDLER", `Deleted ${deletedCount} plan(s) for user ${msg.from.id}`);
+
+        bot.sendMessage(msg.chat.id, `Done. Deleted ${deletedCount} plan(s) and all associated tasks.`);
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "DELETE_DAYS": {
+        const user = await getUserRepository().findByTelegramId(String(msg.from.id));
+
+        if (!user) {
+          bot.sendMessage(msg.chat.id, "No data found for your account.");
+          break;
+        }
+
+        const match = msg.text.toLowerCase().match(/^delete last (\d+) days?$/);
+        const days = parseInt(match[1], 10);
+
+        if (isNaN(days) || days <= 0) {
+          bot.sendMessage(msg.chat.id, "Please specify a valid number of days.");
+          break;
+        }
+
+        const deletedCount = await getPlanRepository().deleteOlderThanDays(user.id, days);
+
+        logger.success("HANDLER", `Deleted ${deletedCount} plan(s) older than ${days} day(s) for user ${msg.from.id}`);
+
+        bot.sendMessage(msg.chat.id, `Done. Deleted ${deletedCount} plan(s) older than ${days} day(s).`);
 
         break;
       }

@@ -1,11 +1,11 @@
 const { getNextTask } = require("./taskSelector");
+const { RANDOM_CHECKIN_CHANCE } = require("../config/constants");
 
 const {
   buildCheckIn,
   buildMediumReminder,
   buildHighReminder,
   buildCriticalReminder,
-  buildOverdueReminder,
 } = require("./messageFactory");
 
 function decideReminder(taskList, stats) {
@@ -37,7 +37,7 @@ function decideReminder(taskList, stats) {
     return {
       shouldSend: true,
       type: "ESCALATION",
-      message: buildOverdueReminder(stats, nextTask),
+      message: buildCriticalReminder(stats, nextTask),
     };
   }
 

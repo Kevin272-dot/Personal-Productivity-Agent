@@ -107,6 +107,42 @@ function createPlanRepository(prismaClient = getPrismaClient()) {
       return prismaClient`delete from daily_plans where id = ${id}`;
     },
 
+    deleteAllForUser(userId) {
+      return prismaClient.begin(async (tx) => {
+        const planIds = await tx`
+          select id from daily_plans where user_id = ${userId}
+        `.then((rows) => rows.map((r) => r.id));
+
+        if (planIds.length === 0) return 0;
+
+        await tx`delete from reminder_history where daily_plan_id = any(${planIds})`;
+        await tx`delete from focus_sessions where task_id in (select id from tasks where daily_plan_id = any(${planIds}))`;
+        await tx`delete from tasks where daily_plan_id = any(${planIds})`;
+        await tx`delete from daily_plans where user_id = ${userId}`;
+
+        return planIds.length;
+      });
+    },
+
+    deleteOlderThanDays(userId, days) {
+      return prismaClient.begin(async (tx) => {
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+        const planIds = await tx`
+          select id from daily_plans where user_id = ${userId} and created_at < ${cutoff}
+        `.then((rows) => rows.map((r) => r.id));
+
+        if (planIds.length === 0) return 0;
+
+        await tx`delete from reminder_history where daily_plan_id = any(${planIds})`;
+        await tx`delete from focus_sessions where task_id in (select id from tasks where daily_plan_id = any(${planIds}))`;
+        await tx`delete from tasks where daily_plan_id = any(${planIds})`;
+        await tx`delete from daily_plans where user_id = ${userId} and created_at < ${cutoff}`;
+
+        return planIds.length;
+      });
+    },
+
     markCompleted(id) {
       return prismaClient`
         update daily_plans
