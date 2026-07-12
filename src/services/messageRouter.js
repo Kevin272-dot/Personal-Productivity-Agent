@@ -44,6 +44,10 @@ function classifyMessage(text) {
     return "GREETING";
   }
 
+  if (lower === "help") {
+    return "HELP";
+  }
+
   return "UNKNOWN";
 }
 

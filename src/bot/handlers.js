@@ -28,6 +28,44 @@ const { focusStarted } = require("../focus/focusMessages");
 
 const logger = require("../utils/logger");
 
+const HELP_MESSAGE = `Here's what I can do:
+
+SET TASKS
+Send your tasks in plain English.
+Example:
+Today's Tasks
+Leetcode
+Gym
+Deadline tomorrow 8 PM
+
+CHECK STATUS
+Send any of:
+- what's left
+- remaining
+- list
+
+COMPLETE A TASK
+Send:
+- done <task>
+- finished <task>
+- completed <task>
+
+FOCUS MODE
+Send:
+- focus <minutes>
+Starts a timed session on your next task.
+
+DELETE ALL
+Send any of:
+- clear all
+- delete all
+- reset
+
+DELETE OLD PLANS
+Send:
+- delete last <N> days
+Example: delete last 3 days`;
+
 let userRepository = null;
 let planRepository = null;
 
@@ -63,6 +101,12 @@ Gym
 
 Deadline tomorrow 8 PM`,
     );
+  });
+
+  bot.onText(/\/help/, (msg) => {
+    logger.info("HANDLER", "/help command received");
+
+    bot.sendMessage(msg.chat.id, HELP_MESSAGE);
   });
 
   bot.on("message", async (msg) => {
@@ -293,6 +337,14 @@ When you're ready, you can start another focus session.`,
         logger.success("HANDLER", `Deleted ${deletedCount} plan(s) older than ${days} day(s) for user ${msg.from.id}`);
 
         bot.sendMessage(msg.chat.id, `Done. Deleted ${deletedCount} plan(s) older than ${days} day(s).`);
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "HELP": {
+        bot.sendMessage(msg.chat.id, HELP_MESSAGE);
 
         break;
       }
