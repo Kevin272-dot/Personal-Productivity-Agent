@@ -28,6 +28,7 @@
     "express": "^5.2.1",
     "node-cron": "^4.6.0",
     "node-telegram-bot-api": "^1.1.2",
+    "postgres": "^3.4.5",
     "@prisma/client": "^6.12.0"
   },
   "devDependencies": {
