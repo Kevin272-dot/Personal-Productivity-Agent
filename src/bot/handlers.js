@@ -85,7 +85,7 @@ function registerHandlers(bot) {
 
     bot.sendMessage(
       msg.chat.id,
-      `Welcome Kevin!
+      `Welcome ${msg.from.first_name}!
 
 I'm your Productivity Agent.
 
