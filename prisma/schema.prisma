@@ -54,6 +54,8 @@ model FocusSession {
 	completed  Boolean  @default(false)
 	taskId     String
 	task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+	userId     String
+	user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
 	@@map("focus_sessions")
 }
