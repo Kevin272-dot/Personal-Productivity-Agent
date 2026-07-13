@@ -24,8 +24,17 @@ function getReminderRepository() {
   return reminderRepository;
 }
 
-function shouldSendNow(taskList, urgency) {
-  const cooldown = REMINDER_INTERVALS[urgency] ?? REMINDER_INTERVALS.MEDIUM;
+function getCooldownScale(remainingHours) {
+  if (remainingHours >= 24) return 3;
+  if (remainingHours >= 12) return 2;
+  if (remainingHours >= 6) return 1.5;
+  return 1;
+}
+
+function shouldSendNow(taskList, urgency, remainingHours) {
+  const baseCooldown = REMINDER_INTERVALS[urgency] ?? REMINDER_INTERVALS.MEDIUM;
+  const scale = getCooldownScale(remainingHours);
+  const cooldown = baseCooldown * scale;
 
   if (!taskList.lastReminderAt) {
     return true;
@@ -91,7 +100,7 @@ function startReminderScheduler(bot) {
         return;
       }
 
-      if (!shouldSendNow(taskList, stats.urgency)) {
+      if (!shouldSendNow(taskList, stats.urgency, stats.remainingHours)) {
         logger.info("SCHEDULER", "Reminder skipped (cooldown).");
 
         return;
