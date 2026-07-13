@@ -2,13 +2,55 @@ const { halfwayReminder, sessionComplete, focusCheckIn } = require("./focusMessa
 
 const {
   getSession,
+  completeSession,
+  endSession,
   markHalfwaySent,
   markAwaitingCompletion,
 } = require("./focusManager");
 
+const { getTaskList } = require("../services/taskManager");
+
 const { RANDOM_FOCUS_CHECKIN_CHANCE } = require("../config/constants");
 
 const logger = require("../utils/logger");
+
+const AWAITING_COMPLETION_TIMEOUT_MS = 5 * 60 * 1000;
+
+let awaitingCompletionTimer = null;
+
+function clearAwaitingCompletionTimer() {
+  if (awaitingCompletionTimer) {
+    clearTimeout(awaitingCompletionTimer);
+    awaitingCompletionTimer = null;
+  }
+}
+
+async function isTaskAlreadyCompleted(session) {
+  try {
+    const taskList = await getTaskList(session.chatId);
+
+    if (!taskList) return false;
+
+    const task = taskList.tasks.find((t) => t.dbId === session.task.dbId);
+
+    return task ? task.completed : false;
+  } catch {
+    return false;
+  }
+}
+
+async function autoEndSession(bot, session, reason) {
+  logger.success("FOCUS", `Auto-ending session: ${reason}`);
+
+  await completeSession();
+  endSession();
+  clearAwaitingCompletionTimer();
+
+  await bot.sendMessage(
+    session.chatId,
+    `Focus Session Ended\n\n${reason}\n\n${session.task.text}`,
+  );
+}
 
 function scheduleSession(bot, session) {
   const halfwayTime = (session.duration * 60 * 1000) / 2;
@@ -30,6 +72,11 @@ function scheduleSession(bot, session) {
 
       if (!current || current.completed) return;
 
+      if (await isTaskAlreadyCompleted(current)) {
+        await autoEndSession(bot, current, "Task completed during session.");
+        return;
+      }
+
       if (Math.random() < RANDOM_FOCUS_CHECKIN_CHANCE) {
         logger.info("FOCUS", "Sending random focus check-in.");
 
@@ -45,11 +92,11 @@ function scheduleSession(bot, session) {
   setTimeout(async () => {
     const current = getSession();
 
-    if (!current) {
-      return;
-    }
+    if (!current) return;
+    if (current.completed) return;
 
-    if (current.completed) {
+    if (await isTaskAlreadyCompleted(current)) {
+      await autoEndSession(bot, current, "Task completed during session.");
       return;
     }
 
@@ -67,11 +114,11 @@ function scheduleSession(bot, session) {
   setTimeout(async () => {
     const current = getSession();
 
-    if (!current) {
-      return;
-    }
+    if (!current) return;
+    if (current.completed) return;
 
-    if (current.completed) {
+    if (await isTaskAlreadyCompleted(current)) {
+      await autoEndSession(bot, current, "Task completed during session.");
       return;
     }
 
@@ -80,9 +127,21 @@ function scheduleSession(bot, session) {
     logger.success("FOCUS", "Focus session finished.");
 
     await bot.sendMessage(current.chatId, sessionComplete(current));
+
+    clearAwaitingCompletionTimer();
+    awaitingCompletionTimer = setTimeout(async () => {
+      const stillActive = getSession();
+
+      if (!stillActive || !stillActive.awaitingCompletion) return;
+
+      logger.warn("FOCUS", "Awaiting completion timed out. Ending session.");
+
+      await autoEndSession(bot, stillActive, "No response received. Session ended.");
+    }, AWAITING_COMPLETION_TIMEOUT_MS);
   }, finishTime);
 }
 
 module.exports = {
   scheduleSession,
+  clearAwaitingCompletionTimer,
 };

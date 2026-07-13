@@ -2,6 +2,10 @@ const { getSession, completeSession, endSession } = require("./focusManager");
 
 const { completeTask } = require("../services/completionService");
 
+const { getTaskList } = require("../services/taskManager");
+
+const { clearAwaitingCompletionTimer } = require("./focusScheduler");
+
 function isPositiveResponse(text) {
   const lower = text.toLowerCase().trim();
 
@@ -42,6 +46,27 @@ async function handleFocusReply(message, chatId) {
     return null;
   }
 
+  clearAwaitingCompletionTimer();
+
+  const taskList = await getTaskList(chatId);
+
+  if (taskList) {
+    const focusTask = taskList.tasks.find((t) => t.dbId === session.task.dbId);
+
+    if (focusTask && focusTask.completed) {
+      await completeSession();
+      endSession();
+
+      return {
+        handled: true,
+        success: true,
+        completed: true,
+        alreadyCompleted: true,
+        taskList,
+      };
+    }
+  }
+
   if (isPositiveResponse(message)) {
     const result = await completeTask(session.task.text, chatId);
 
@@ -57,6 +82,9 @@ async function handleFocusReply(message, chatId) {
   }
 
   if (isNegativeResponse(message)) {
+    await completeSession();
+    endSession();
+
     return {
       handled: true,
       success: true,

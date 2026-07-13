@@ -74,9 +74,35 @@ function createPlanRepository(prismaClient = getPrismaClient()) {
     },
 
     findAll(where = {}) {
+      if (where.userId) {
+        return prismaClient`
+          select id, deadline, completed, created_at, user_id
+          from daily_plans
+          where user_id = ${where.userId}
+          order by created_at desc
+        `;
+      }
       return prismaClient`
         select id, deadline, completed, created_at, user_id
         from daily_plans
+        order by created_at desc
+      `;
+    },
+
+    findAllByUser(userId) {
+      return prismaClient`
+        select id, deadline, completed, created_at, user_id
+        from daily_plans
+        where user_id = ${userId}
+        order by created_at desc
+      `;
+    },
+
+    findOlderThan(userId, cutoff) {
+      return prismaClient`
+        select id, deadline, completed, created_at, user_id
+        from daily_plans
+        where user_id = ${userId} and created_at < ${cutoff}
         order by created_at desc
       `;
     },

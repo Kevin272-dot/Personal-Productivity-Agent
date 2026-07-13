@@ -190,7 +190,14 @@ Deadline tomorrow 8 PM`,
       const result = await handleFocusReply(msg.text, msg.chat.id);
 
       if (result?.handled) {
-        if (result.completed) {
+        if (result.alreadyCompleted) {
+          logger.success("FOCUS", "Focus task was already completed.");
+
+          bot.sendMessage(
+            msg.chat.id,
+            `Focus Session Ended\n\nTask was already completed.\n\n${activeSession.task.text}`,
+          );
+        } else if (result.completed) {
           logger.success(
             "FOCUS",
             `${activeSession.task.text} completed after focus session.`,
@@ -204,11 +211,7 @@ Deadline tomorrow 8 PM`,
 
           bot.sendMessage(
             msg.chat.id,
-            `No problem.
-
-The task is still pending.
-
-When you're ready, you can start another focus session.`,
+            `No problem.\n\nThe task is still pending.\n\nWhen you're ready, you can start another focus session.`,
           );
         }
 
@@ -304,12 +307,24 @@ When you're ready, you can start another focus session.`,
           break;
         }
 
-        const deletedCount = await getPlanRepository().deleteAllForUser(user.id);
-        await clearTaskList(msg.chat.id);
+        const planRepo = getPlanRepository();
+        const allPlans = await planRepo.findAllByUser(user.id);
+        const planCount = Array.isArray(allPlans) ? allPlans.length : 0;
 
-        logger.success("HANDLER", `Deleted ${deletedCount} plan(s) for user ${msg.from.id}`);
-
-        bot.sendMessage(msg.chat.id, `Done. Deleted ${deletedCount} plan(s) and all associated tasks.`);
+        bot.sendMessage(
+          msg.chat.id,
+          `This will permanently delete ${planCount} plan(s) and all associated tasks, reminders, and focus sessions.\n\nThis cannot be undone.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "Yes, delete everything", callback_data: `delete_all_confirm:${msg.from.id}` },
+                  { text: "No, cancel", callback_data: "delete_cancel" },
+                ],
+              ],
+            },
+          },
+        );
 
         break;
       }
@@ -332,11 +347,25 @@ When you're ready, you can start another focus session.`,
           break;
         }
 
-        const deletedCount = await getPlanRepository().deleteOlderThanDays(user.id, days);
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        const planRepo = getPlanRepository();
+        const oldPlans = await planRepo.findOlderThan(user.id, cutoff);
+        const oldCount = Array.isArray(oldPlans) ? oldPlans.length : 0;
 
-        logger.success("HANDLER", `Deleted ${deletedCount} plan(s) older than ${days} day(s) for user ${msg.from.id}`);
-
-        bot.sendMessage(msg.chat.id, `Done. Deleted ${deletedCount} plan(s) older than ${days} day(s).`);
+        bot.sendMessage(
+          msg.chat.id,
+          `This will permanently delete ${oldCount} plan(s) older than ${days} day(s) and all associated data.\n\nThis cannot be undone.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: `Yes, delete ${oldCount} plan(s)`, callback_data: `delete_days_confirm:${msg.from.id}:${days}` },
+                  { text: "No, cancel", callback_data: "delete_cancel" },
+                ],
+              ],
+            },
+          },
+        );
 
         break;
       }
@@ -356,6 +385,89 @@ When you're ready, you can start another focus session.`,
 
         bot.sendMessage(msg.chat.id, buildUnknownResponse());
       }
+    }
+  });
+
+  // =====================================================
+  // Callback Query Handler (inline keyboard buttons)
+  // =====================================================
+
+  bot.on("callback_query", async (query) => {
+    const data = query.data;
+    const chatId = query.message.chat.id;
+    const userId = query.from.id;
+
+    bot.answerCallbackQuery(query.id);
+
+    if (data === "delete_cancel") {
+      bot.editMessageText("Cancelled. No data was deleted.", {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      return;
+    }
+
+    if (data.startsWith("delete_all_confirm:")) {
+      const targetUserId = data.split(":")[1];
+
+      if (String(userId) !== String(targetUserId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const user = await getUserRepository().findByTelegramId(String(userId));
+
+      if (!user) {
+        bot.editMessageText("No data found for your account.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const planRepo = getPlanRepository();
+      const deletedCount = await planRepo.deleteAllForUser(user.id);
+      await clearTaskList(chatId);
+
+      logger.success("HANDLER", `Deleted ${deletedCount} plan(s) for user ${userId}`);
+
+      bot.editMessageText(`Done. Deleted ${deletedCount} plan(s) and all associated tasks.`, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      return;
+    }
+
+    if (data.startsWith("delete_days_confirm:")) {
+      const parts = data.split(":");
+      const targetUserId = parts[1];
+      const days = parseInt(parts[2], 10);
+
+      if (String(userId) !== String(targetUserId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const user = await getUserRepository().findByTelegramId(String(userId));
+
+      if (!user) {
+        bot.editMessageText("No data found for your account.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const planRepo = getPlanRepository();
+      const deletedCount = await planRepo.deleteOlderThanDays(user.id, days);
+
+      logger.success("HANDLER", `Deleted ${deletedCount} plan(s) older than ${days} day(s) for user ${userId}`);
+
+      bot.editMessageText(`Done. Deleted ${deletedCount} plan(s) older than ${days} day(s).`, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      return;
     }
   });
 }
