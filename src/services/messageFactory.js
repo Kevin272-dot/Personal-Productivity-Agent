@@ -25,10 +25,44 @@ function formatHours(hours) {
 function random(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
+
+function buildLowReminder(stats, nextTask) {
+  const headline = random(MOMENTUM);
+
+  return `${headline}
+
+Completed : ${stats.completedTasks}/${stats.totalTasks}
+Remaining : ${stats.remainingTasks}
+
+Time Left : ${formatHours(stats.remainingHours)}
+
+Next
+
+${nextTask.text}`;
+}
+
 function buildCheckIn(nextTask) {
-  return `Attention
+  const headline = random(CHECK_IN);
+
+  return `${headline}
 
 Current Task
+
+${nextTask.text}`;
+}
+
+function buildRandomCheckIn(stats, nextTask) {
+  const pool = [...MOMENTUM, ...DISTRACTION, ...CHECK_IN];
+  const headline = random(pool);
+
+  return `${headline}
+
+Completed : ${stats.completedTasks}/${stats.totalTasks}
+Remaining : ${stats.remainingTasks}
+
+Time Left : ${formatHours(stats.remainingHours)}
+
+Next
 
 ${nextTask.text}`;
 }
@@ -82,7 +116,9 @@ ${nextTask.text}`;
 }
 
 module.exports = {
+  buildLowReminder,
   buildCheckIn,
+  buildRandomCheckIn,
   buildMediumReminder,
   buildHighReminder,
   buildCriticalReminder,

@@ -2,7 +2,9 @@ const { getNextTask } = require("./taskSelector");
 const { RANDOM_CHECKIN_CHANCE } = require("../config/constants");
 
 const {
+  buildLowReminder,
   buildCheckIn,
+  buildRandomCheckIn,
   buildMediumReminder,
   buildHighReminder,
   buildCriticalReminder,
@@ -41,18 +43,21 @@ function decideReminder(taskList, stats) {
     };
   }
 
+  // Random surprise check-in — any urgency level
   if (Math.random() < RANDOM_CHECKIN_CHANCE) {
     return {
       shouldSend: true,
       type: "CHECK_IN",
-      message: buildCheckIn(nextTask),
+      message: buildRandomCheckIn(stats, nextTask),
     };
   }
 
   switch (stats.urgency) {
     case "LOW":
       return {
-        shouldSend: false,
+        shouldSend: true,
+        type: "REMINDER",
+        message: buildLowReminder(stats, nextTask),
       };
 
     case "MEDIUM":

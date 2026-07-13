@@ -53,6 +53,8 @@ async function sendReminder(bot, taskList, stats) {
     dailyPlanId: taskList.dbId,
   });
 
+  taskList.lastReminderAt = new Date();
+
   logger.success("SCHEDULER", `${decision.type} reminder sent.`);
 }
 
