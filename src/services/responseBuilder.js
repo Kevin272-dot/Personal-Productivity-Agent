@@ -1,4 +1,5 @@
 const { formatRemainingTime, getTaskStatistics } = require("./taskStatistics");
+const { formatToIST } = require("../utils/ist");
 
 function buildTaskListResponse(taskList) {
   let message = "";
@@ -7,7 +8,7 @@ function buildTaskListResponse(taskList) {
   message += "────────────────────\n\n";
 
   message += `Tasks      : ${taskList.total}\n`;
-  message += `Deadline   : ${taskList.deadline.toLocaleString()}\n`;
+  message += `Deadline   : ${formatToIST(taskList.deadline)} IST\n`;
   message += `Time Left  : ${formatRemainingTime(taskList.deadline)}\n\n`;
 
   message += "Tasks\n";
@@ -37,7 +38,7 @@ function buildCurrentTasksResponse(taskList) {
 
   message += `Completed : ${completed}/${taskList.total}\n`;
   message += `Remaining : ${remaining}\n`;
-  message += `Deadline  : ${taskList.deadline.toLocaleString()}\n`;
+  message += `Deadline  : ${formatToIST(taskList.deadline)} IST\n`;
   message += `Time Left : ${formatRemainingTime(taskList.deadline)}\n`;
 
   if (remaining > 0 && remainingHours > 0) {

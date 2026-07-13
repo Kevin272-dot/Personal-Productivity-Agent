@@ -93,6 +93,11 @@ function createTaskRepository(prismaClient = getPrismaClient()) {
       return prismaClient`delete from tasks where id = ${id}`;
     },
 
+    deleteTasks(ids) {
+      if (!ids || ids.length === 0) return Promise.resolve(0);
+      return prismaClient`delete from tasks where id = any(${ids})`;
+    },
+
     findNextIncompleteByDailyPlanId(dailyPlanId) {
       return prismaClient`
         select id, title, priority, completed, completed_at as "completedAt", created_at as "createdAt", daily_plan_id as "dailyPlanId"

@@ -16,6 +16,10 @@ const RANDOM_FOCUS_CHECKIN_CHANCE = 0.20;
 
 const SCHEDULER_CRON = "0 * * * *"; // Every hour at minute 0
 
+const TIMEZONE = "Asia/Kolkata";
+
+const OVERDUE_PROMPT_COOLDOWN_MS = 60 * 60 * 1000;
+
 module.exports = {
   ALLOWED_USERS,
   MAX_USERS,
@@ -24,4 +28,6 @@ module.exports = {
   RANDOM_CHECKIN_CHANCE,
   RANDOM_FOCUS_CHECKIN_CHANCE,
   SCHEDULER_CRON,
+  TIMEZONE,
+  OVERDUE_PROMPT_COOLDOWN_MS,
 };

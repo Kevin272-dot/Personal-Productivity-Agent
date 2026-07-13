@@ -1,4 +1,39 @@
 const chrono = require("chrono-node");
+const { parseDateIST, getDefaultDeadlineIST } = require("../utils/ist");
+
+const HEADING_PATTERNS = [
+  /^today('s)?$/i,
+  /^tasks?$/i,
+  /^todo$/i,
+  /^to\s*do$/i,
+  /^need\s+to\s+finish$/i,
+  /^things\s+to\s+do$/i,
+  /^plan$/i,
+  /^goals?$/i,
+  /^today('s)?\s+tasks?$/i,
+  /^my\s+tasks$/i,
+  /^daily\s+tasks$/i,
+  /^plan\s+for\s+(today|tomorrow)$/i,
+  /^goals?\s+for\s+(today|tomorrow)$/i,
+];
+
+function isHeading(line) {
+  const trimmed = line.trim().toLowerCase();
+  return HEADING_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+function isDeadlineLine(line) {
+  const results = chrono.parse(line);
+  if (!results || results.length === 0) return false;
+
+  const parsedText = results.map((r) => r.text).join(" ").trim();
+  const lineLower = line.toLowerCase().trim();
+
+  if (parsedText.length === 0) return false;
+
+  const coverage = parsedText.length / lineLower.length;
+  return coverage >= 0.5;
+}
 
 function parseMessage(text) {
   const lines = text
@@ -8,31 +43,23 @@ function parseMessage(text) {
 
   const tasks = [];
   let deadline = null;
-  const ignoredHeadings = [
-    "today",
-    "tasks",
-    "todo",
-    "to do",
-    "need to finish",
-    "things to do",
-    "plan",
-    "goals",
-  ];
 
   for (const line of lines) {
-    const lower = line.toLowerCase();
-
-    if (ignoredHeadings.some((heading) => lower.includes(heading))) {
-      continue;
-    }
-    const cleanedLine = line.replace(/^[-•*]\s*/, "");
+    const cleanedLine = line.replace(/^[-•*]\s*/, "").trim();
     if (!cleanedLine) continue;
 
-    const parsedDate = chrono.parseDate(cleanedLine);
-    if (parsedDate) {
-      deadline = parsedDate;
+    if (isHeading(cleanedLine)) {
       continue;
     }
+
+    if (isDeadlineLine(cleanedLine)) {
+      const parsedDate = parseDateIST(cleanedLine);
+      if (parsedDate) {
+        deadline = parsedDate;
+        continue;
+      }
+    }
+
     if (
       tasks.some(
         (task) => task.text.toLowerCase() === cleanedLine.toLowerCase(),
@@ -51,7 +78,7 @@ function parseMessage(text) {
   }
 
   if (!deadline) {
-    deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    deadline = getDefaultDeadlineIST();
   }
 
   return {

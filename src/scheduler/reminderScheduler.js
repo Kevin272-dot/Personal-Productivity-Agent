@@ -1,12 +1,14 @@
 const cron = require("node-cron");
 
-const { REMINDER_INTERVALS, SCHEDULER_CRON } = require("../config/constants");
+const { REMINDER_INTERVALS, SCHEDULER_CRON, OVERDUE_PROMPT_COOLDOWN_MS } = require("../config/constants");
 
 const { getTaskList, updateTaskList } = require("../services/taskManager");
 
 const { calculateReminder } = require("../services/reminderService");
 
 const { decideReminder } = require("../services/behaviourEngine");
+
+const { buildOverdueMessage } = require("../services/messageFactory");
 
 const {
   createReminderRepository,
@@ -46,6 +48,15 @@ function shouldSendNow(taskList, urgency, remainingHours) {
   return elapsedMinutes >= cooldown;
 }
 
+function shouldSendOverduePrompt(taskList) {
+  if (!taskList.lastOverduePromptAt) {
+    return true;
+  }
+
+  const elapsed = Date.now() - new Date(taskList.lastOverduePromptAt).getTime();
+  return elapsed >= OVERDUE_PROMPT_COOLDOWN_MS;
+}
+
 async function sendReminder(bot, taskList, stats) {
   const decision = decideReminder(taskList, stats);
 
@@ -65,6 +76,37 @@ async function sendReminder(bot, taskList, stats) {
   taskList.lastReminderAt = new Date();
 
   logger.success("SCHEDULER", `${decision.type} reminder sent.`);
+}
+
+async function sendOverduePrompt(bot, taskList, stats) {
+  const { message, durationLabel, durationHours } = buildOverdueMessage(stats, taskList);
+
+  await bot.sendMessage(taskList.chatId, message, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: `Extend by ${durationLabel}`,
+            callback_data: `overdue_extend:${taskList.chatId}:${durationHours}`,
+          },
+          {
+            text: "Delete Tasks",
+            callback_data: `overdue_delete:${taskList.chatId}`,
+          },
+        ],
+      ],
+    },
+  });
+
+  await getReminderRepository().createReminder({
+    type: "OVERDUE_PROMPT",
+    urgency: stats.urgency,
+    dailyPlanId: taskList.dbId,
+  });
+
+  taskList.lastOverduePromptAt = new Date();
+
+  logger.success("SCHEDULER", "Overdue prompt sent with extend/delete options.");
 }
 
 function startReminderScheduler(bot) {
@@ -90,19 +132,20 @@ function startReminderScheduler(bot) {
 
       if (stats.remainingTasks === 0) {
         logger.success("SCHEDULER", "All tasks completed.");
-
         return;
       }
 
       if (stats.overdue) {
-        logger.warn("SCHEDULER", "Deadline has passed.");
-
+        if (shouldSendOverduePrompt(taskList)) {
+          await sendOverduePrompt(bot, taskList, stats);
+        } else {
+          logger.info("SCHEDULER", "Overdue prompt skipped (cooldown).");
+        }
         return;
       }
 
       if (!shouldSendNow(taskList, stats.urgency, stats.remainingHours)) {
         logger.info("SCHEDULER", "Reminder skipped (cooldown).");
-
         return;
       }
 

@@ -14,6 +14,10 @@ function classifyMessage(text) {
     return "DELETE_DAYS";
   }
 
+  if (lower === "move" || lower.startsWith("move ")) {
+    return "MOVE";
+  }
+
   if (
     lower.includes("today") ||
     lower.includes("tasks") ||

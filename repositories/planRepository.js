@@ -121,6 +121,24 @@ function createPlanRepository(prismaClient = getPrismaClient()) {
     },
 
     update(id, data) {
+      if (data.deadline !== undefined && data.completed !== undefined) {
+        return prismaClient`
+          update daily_plans
+          set completed = ${data.completed}, deadline = ${data.deadline}
+          where id = ${id}
+          returning id, deadline, completed, created_at, user_id
+        `.then(([row]) => row || null);
+      }
+
+      if (data.deadline !== undefined) {
+        return prismaClient`
+          update daily_plans
+          set deadline = ${data.deadline}
+          where id = ${id}
+          returning id, deadline, completed, created_at, user_id
+        `.then(([row]) => row || null);
+      }
+
       return prismaClient`
         update daily_plans
         set completed = coalesce(${data.completed ?? null}, completed)

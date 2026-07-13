@@ -58,6 +58,7 @@ function mapPlanToTaskList(plan) {
     tasks,
     lastReminderAt: latestReminder ? latestReminder.sentAt : null,
     lastReminderType: latestReminder ? latestReminder.type : null,
+    lastOverduePromptAt: null,
     user: plan.user,
   };
 }
@@ -118,9 +119,13 @@ async function getTaskList(chatId) {
 async function updateTaskList(patch) {
   if (!activeTaskList) return null;
 
-  await getPlanRepository().update(activeTaskList.dbId, {
-    ...(patch.completed !== undefined ? { completed: patch.completed } : {}),
-  });
+  const dbUpdate = {};
+  if (patch.completed !== undefined) dbUpdate.completed = patch.completed;
+  if (patch.deadline !== undefined) dbUpdate.deadline = patch.deadline;
+
+  if (Object.keys(dbUpdate).length > 0) {
+    await getPlanRepository().update(activeTaskList.dbId, dbUpdate);
+  }
 
   activeTaskList = {
     ...activeTaskList,

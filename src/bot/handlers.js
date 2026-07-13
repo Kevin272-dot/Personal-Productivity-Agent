@@ -1,5 +1,5 @@
 const { parseMessage } = require("../services/taskParser");
-const { setTaskList, getTaskList, clearTaskList } = require("../services/taskManager");
+const { setTaskList, getTaskList, clearTaskList, updateTaskList } = require("../services/taskManager");
 const { completeTask } = require("../services/completionService");
 const { classifyMessage } = require("../services/messageRouter");
 const { getNextTask } = require("../services/taskSelector");
@@ -7,6 +7,8 @@ const { getSession } = require("../focus/focusManager");
 const { ALLOWED_USERS, MAX_USERS } = require("../config/constants");
 const { createUserRepository } = require("../../repositories/userRepository");
 const { createPlanRepository } = require("../../repositories/planRepository");
+const { createTaskRepository } = require("../../repositories/taskRepository");
+const { formatToIST, parseDateIST, getOriginalDurationHours } = require("../utils/ist");
 
 const { handleFocusReply } = require("../focus/focusCompletion");
 const {
@@ -32,6 +34,7 @@ const HELP_MESSAGE = `Here's what I can do:
 
 SET TASKS
 Send your tasks in plain English.
+All times are in IST (Indian Standard Time).
 Example:
 Today's Tasks
 Leetcode
@@ -50,6 +53,13 @@ Send:
 - finished <task>
 - completed <task>
 
+MOVE DEADLINE
+Send:
+- move (defaults to 24h)
+- move <duration>
+Duration examples: 2h, 30m, 1d, tomorrow 8 PM
+Opens an interface to select which tasks to move.
+
 FOCUS MODE
 Send:
 - focus <minutes>
@@ -64,10 +74,18 @@ Send any of:
 DELETE OLD PLANS
 Send:
 - delete last <N> days
-Example: delete last 3 days`;
+Example: delete last 3 days
+
+OVERDUE TASKS
+When a deadline passes, you can:
+- Extend the deadline by the original duration
+- Delete the remaining tasks`;
 
 let userRepository = null;
 let planRepository = null;
+let taskRepository = null;
+
+const moveSelections = new Map();
 
 function getUserRepository() {
   if (!userRepository) userRepository = createUserRepository();
@@ -77,6 +95,40 @@ function getUserRepository() {
 function getPlanRepository() {
   if (!planRepository) planRepository = createPlanRepository();
   return planRepository;
+}
+
+function getTaskRepository() {
+  if (!taskRepository) taskRepository = createTaskRepository();
+  return taskRepository;
+}
+
+function buildMoveKeyboard(tasks, selected, chatId, deadlineMs) {
+  const keyboard = [];
+
+  for (const task of tasks) {
+    const isSelected = selected.has(task.dbId);
+    const checkbox = isSelected ? "[x]" : "[ ]";
+    keyboard.push([
+      {
+        text: `${checkbox} ${task.text}`,
+        callback_data: `move_toggle:${chatId}:${task.dbId}`,
+      },
+    ]);
+  }
+
+  const selectedCount = selected.size;
+  keyboard.push([
+    {
+      text: `Confirm Move (${selectedCount} task${selectedCount !== 1 ? "s" : ""})`,
+      callback_data: `move_go:${chatId}:${deadlineMs}`,
+    },
+    {
+      text: "Cancel",
+      callback_data: "move_cancel",
+    },
+  ]);
+
+  return keyboard;
 }
 
 function registerHandlers(bot) {
@@ -90,6 +142,7 @@ function registerHandlers(bot) {
 I'm your Productivity Agent.
 
 Send me your tasks in plain English.
+All times are in IST (Indian Standard Time).
 
 Example
 
@@ -235,6 +288,7 @@ Deadline tomorrow 8 PM`,
           userName: msg.from.first_name,
           lastReminderAt: null,
           lastReminderType: null,
+          lastOverduePromptAt: null,
         };
 
         const savedTaskList = await setTaskList(taskList);
@@ -283,6 +337,92 @@ Deadline tomorrow 8 PM`,
         logger.success("COMPLETION", `${result.task.text} completed`);
 
         bot.sendMessage(msg.chat.id, buildCompletionResponse(result.taskList));
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "MOVE": {
+        const current = await getTaskList(msg.chat.id);
+
+        if (!current) {
+          bot.sendMessage(msg.chat.id, buildNoTaskResponse());
+          break;
+        }
+
+        const remainingTasks = current.tasks.filter((t) => !t.completed);
+
+        if (remainingTasks.length === 0) {
+          bot.sendMessage(msg.chat.id, "All tasks are already completed. Nothing to move.");
+          break;
+        }
+
+        const moveInput = msg.text.trim();
+        const durationMatch = moveInput.match(/^move\s+(.+)$/i);
+        let newDeadline;
+        let durationLabel;
+
+        if (durationMatch) {
+          const durationStr = durationMatch[1].trim();
+
+          const hoursMatch = durationStr.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?)?$/i);
+          const minutesMatch = durationStr.match(/^(\d+(?:\.\d+)?)\s*m(?:in(?:utes?)?)?$/i);
+          const daysMatch = durationStr.match(/^(\d+(?:\.\d+)?)\s*d(?:ays?)?$/i);
+
+          if (hoursMatch) {
+            const hours = parseFloat(hoursMatch[1]);
+            newDeadline = new Date(Date.now() + hours * 60 * 60 * 1000);
+            durationLabel = `${hours} hour(s)`;
+          } else if (minutesMatch) {
+            const mins = parseFloat(minutesMatch[1]);
+            newDeadline = new Date(Date.now() + mins * 60 * 1000);
+            durationLabel = `${mins} minute(s)`;
+          } else if (daysMatch) {
+            const days = parseFloat(daysMatch[1]);
+            newDeadline = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+            durationLabel = `${days} day(s)`;
+          } else {
+            const chronoDate = parseDateIST(durationStr);
+            if (chronoDate && chronoDate.getTime() > Date.now()) {
+              newDeadline = chronoDate;
+              const diffHours = (chronoDate.getTime() - Date.now()) / (1000 * 60 * 60);
+              durationLabel = `${diffHours.toFixed(1)} hour(s)`;
+            } else {
+              newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+              durationLabel = "24 hour(s)";
+            }
+          }
+        } else {
+          newDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          durationLabel = "24 hour(s)";
+        }
+
+        const selectedIds = new Set(remainingTasks.map((t) => t.dbId));
+
+        moveSelections.set(msg.chat.id, {
+          deadline: newDeadline,
+          durationLabel,
+          tasks: remainingTasks,
+          selected: selectedIds,
+        });
+
+        const keyboard = buildMoveKeyboard(remainingTasks, selectedIds, msg.chat.id, newDeadline.getTime());
+
+        let moveMsg = "";
+        moveMsg += "Move Tasks\n";
+        moveMsg += "────────────────────\n\n";
+        moveMsg += `Select tasks to move to a new deadline.\n\n`;
+        moveMsg += `New Deadline : ${formatToIST(newDeadline)} IST\n`;
+        moveMsg += `Duration     : ${durationLabel}\n\n`;
+        moveMsg += `Tap tasks to toggle selection.\n`;
+        moveMsg += `All tasks are selected by default.`;
+
+        bot.sendMessage(msg.chat.id, moveMsg, {
+          reply_markup: {
+            inline_keyboard: keyboard,
+          },
+        });
 
         break;
       }
@@ -467,6 +607,246 @@ Deadline tomorrow 8 PM`,
         chat_id: chatId,
         message_id: query.message.message_id,
       });
+      return;
+    }
+
+    // =====================================================
+    // Overdue Action Handlers
+    // =====================================================
+
+    if (data.startsWith("overdue_extend:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+      const durationHours = parseFloat(parts[2]);
+
+      if (String(chatId) !== String(targetChatId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const current = await getTaskList(chatId);
+
+      if (!current) {
+        bot.editMessageText("No active task list found.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const newDeadline = new Date(Date.now() + durationHours * 60 * 60 * 1000);
+
+      await updateTaskList({ deadline: newDeadline });
+
+      logger.success("HANDLER", `Deadline extended by ${durationHours}h for user ${userId}`);
+
+      bot.editMessageText(
+        `Deadline Extended\n────────────────────\n\nNew Deadline : ${formatToIST(newDeadline)} IST\nTime Left    : ${durationHours}h\n\nYour tasks have been updated.`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        },
+      );
+      return;
+    }
+
+    if (data.startsWith("overdue_delete:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+
+      if (String(chatId) !== String(targetChatId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      await clearTaskList(chatId);
+
+      logger.success("HANDLER", `Tasks deleted after overdue for user ${userId}`);
+
+      bot.editMessageText(
+        "Tasks Deleted\n────────────────────\n\nAll remaining tasks have been deleted.\nSend new tasks to start fresh.",
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        },
+      );
+      return;
+    }
+
+    // =====================================================
+    // Move Action Handlers
+    // =====================================================
+
+    if (data === "move_cancel") {
+      const session = moveSelections.get(chatId);
+      if (session) {
+        moveSelections.delete(chatId);
+      }
+
+      bot.editMessageText("Move cancelled. No changes made.", {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      return;
+    }
+
+    if (data.startsWith("move_toggle:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+      const taskDbId = parts[2];
+
+      if (String(chatId) !== String(targetChatId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const session = moveSelections.get(chatId);
+
+      if (!session) {
+        bot.answerCallbackQuery(query.id, { text: "Session expired. Send 'move' again." });
+        return;
+      }
+
+      if (session.selected.has(taskDbId)) {
+        session.selected.delete(taskDbId);
+      } else {
+        session.selected.add(taskDbId);
+      }
+
+      const keyboard = buildMoveKeyboard(session.tasks, session.selected, chatId, session.deadline.getTime());
+
+      const selectedCount = session.selected.size;
+      const totalTasks = session.tasks.length;
+
+      let moveMsg = "";
+      moveMsg += "Move Tasks\n";
+      moveMsg += "────────────────────\n\n";
+      moveMsg += `Select tasks to move to a new deadline.\n\n`;
+      moveMsg += `New Deadline : ${formatToIST(session.deadline)} IST\n`;
+      moveMsg += `Duration     : ${session.durationLabel}\n\n`;
+      moveMsg += `Selected : ${selectedCount}/${totalTasks} task(s)\n`;
+      moveMsg += `Tap tasks to toggle. Then confirm.`;
+
+      bot.editMessageText(moveMsg, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        reply_markup: {
+          inline_keyboard: keyboard,
+        },
+      });
+
+      return;
+    }
+
+    if (data.startsWith("move_go:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+      const deadlineMs = parseInt(parts[2], 10);
+
+      if (String(chatId) !== String(targetChatId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const session = moveSelections.get(chatId);
+
+      if (!session) {
+        bot.editMessageText("Session expired. Send 'move' again.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const selectedIds = [...session.selected];
+
+      if (selectedIds.length === 0) {
+        bot.answerCallbackQuery(query.id, { text: "No tasks selected." });
+        return;
+      }
+
+      const current = await getTaskList(chatId);
+
+      if (!current) {
+        moveSelections.delete(chatId);
+        bot.editMessageText("No active task list found.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const user = await getUserRepository().findByTelegramId(String(chatId));
+
+      if (!user) {
+        moveSelections.delete(chatId);
+        bot.editMessageText("No data found for your account.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const newDeadline = new Date(deadlineMs);
+
+      await getTaskRepository().deleteTasks(selectedIds);
+
+      const planRepo = getPlanRepository();
+      const newPlan = await planRepo.createPlan({
+        deadline: newDeadline,
+        completed: false,
+        userId: user.id,
+        tasks: {
+          create: session.tasks
+            .filter((t) => selectedIds.includes(t.dbId))
+            .map((t) => ({
+              title: t.text,
+              priority: t.priority || "normal",
+              completed: false,
+              completedAt: null,
+              createdAt: new Date(),
+            })),
+        },
+      });
+
+      const remainingInCurrent = current.tasks.filter(
+        (t) => !t.completed && !selectedIds.includes(t.dbId),
+      );
+
+      if (remainingInCurrent.length === 0) {
+        await planRepo.markCompleted(current.dbId);
+      }
+
+      await setTaskList({
+        chatId,
+        userName: current.user?.name || "User",
+        createdAt: new Date(),
+        deadline: current.deadline,
+        total: remainingInCurrent.length,
+        completed: 0,
+        tasks: remainingInCurrent.map((t, i) => ({
+          id: i + 1,
+          text: t.text,
+          completed: false,
+          completedAt: null,
+          priority: t.priority || "normal",
+        })),
+        lastReminderAt: null,
+        lastReminderType: null,
+        lastOverduePromptAt: null,
+      });
+
+      moveSelections.delete(chatId);
+
+      logger.success("HANDLER", `${selectedIds.length} task(s) moved to ${formatToIST(newDeadline)} IST for user ${userId}`);
+
+      bot.editMessageText(
+        `Tasks Moved\n────────────────────\n\nMoved ${selectedIds.length} task(s) to a new plan.\nNew Deadline : ${formatToIST(newDeadline)} IST\n\nRemaining in current plan : ${remainingInCurrent.length} task(s)`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        },
+      );
       return;
     }
   });
