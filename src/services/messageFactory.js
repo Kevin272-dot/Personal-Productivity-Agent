@@ -31,13 +31,12 @@ function buildLowReminder(stats, nextTask) {
 
   return `${headline}
 
-Completed : ${stats.completedTasks}/${stats.totalTasks}
-Remaining : ${stats.remainingTasks}
+-- Progress --
+[ ] Done: ${stats.completedTasks}/${stats.totalTasks}
+[ ] Left: ${stats.remainingTasks}
+[ ] Time: ${formatHours(stats.remainingHours)}
 
-Time Left : ${formatHours(stats.remainingHours)}
-
-Next
-
+-- Next --
 ${nextTask.text}`;
 }
 
@@ -46,8 +45,7 @@ function buildCheckIn(nextTask) {
 
   return `${headline}
 
-Current Task
-
+-- Current Task --
 ${nextTask.text}`;
 }
 
@@ -57,61 +55,47 @@ function buildRandomCheckIn(stats, nextTask) {
 
   return `${headline}
 
-Completed : ${stats.completedTasks}/${stats.totalTasks}
-Remaining : ${stats.remainingTasks}
+-- Progress --
+[ ] Done: ${stats.completedTasks}/${stats.totalTasks}
+[ ] Left: ${stats.remainingTasks}
+[ ] Time: ${formatHours(stats.remainingHours)}
 
-Time Left : ${formatHours(stats.remainingHours)}
-
-Next
-
+-- Next --
 ${nextTask.text}`;
 }
 
 function buildMediumReminder(stats, nextTask) {
-  return `Status
+  return `-- Status --
 
-Completed : ${stats.completedTasks}/${stats.totalTasks}
-Remaining : ${stats.remainingTasks}
+[ ] Done: ${stats.completedTasks}/${stats.totalTasks}
+[ ] Left: ${stats.remainingTasks}
+[ ] Time: ${formatHours(stats.remainingHours)}
+[ ] Pace: ${stats.requiredPace.toFixed(1)} task(s)/hr
 
-Time Left : ${formatHours(stats.remainingHours)}
-
-Required Pace : ${stats.requiredPace.toFixed(1)} task(s)/hour
-
-Next
-
+-- Next --
 ${nextTask.text}`;
 }
 
 function buildHighReminder(stats, nextTask) {
-  return `Status
+  return `-- Status : HIGH --
 
-Pressure : HIGH
+[ ] Done: ${stats.completedTasks}/${stats.totalTasks}
+[ ] Left: ${stats.remainingTasks}
+[ ] Time: ${formatHours(stats.remainingHours)}
+[ ] Pace: ${stats.requiredPace.toFixed(1)} task(s)/hr
 
-Completed : ${stats.completedTasks}/${stats.totalTasks}
-Remaining : ${stats.remainingTasks}
-
-Time Left : ${formatHours(stats.remainingHours)}
-
-Required Pace : ${stats.requiredPace.toFixed(1)} task(s)/hour
-
-Priority
-
+-- Priority --
 ${nextTask.text}`;
 }
 
 function buildCriticalReminder(stats, nextTask) {
-  return `Deadline Near
+  return `-- Deadline Near --
 
-Remaining : ${stats.remainingTasks}
+[ ] Left: ${stats.remainingTasks}
+[ ] Time: ${formatHours(stats.remainingHours)}
+[ ] Pace: ${stats.requiredPace.toFixed(1)} task(s)/hr
 
-Time Left : ${formatHours(stats.remainingHours)}
-
-Required Pace
-
-${stats.requiredPace.toFixed(1)} task(s)/hour
-
-Start
-
+-- Start Now --
 ${nextTask.text}`;
 }
 

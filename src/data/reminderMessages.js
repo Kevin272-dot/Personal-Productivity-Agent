@@ -1,47 +1,47 @@
 const CHECK_IN = [
-  "Still focused?",
+  ">> Still focused?",
 
-  "Quick check-in. How's it going?",
+  ">> Quick check-in — how's it going?",
 
-  "Have you finished anything since the last reminder?",
+  ">> Any progress since the last check?",
 
-  "A small step is enough. Finish one task.",
+  ">> A small step is enough. Finish one task.",
 
-  "Still with me?",
+  ">> Still with me?",
 ];
 
 const MOMENTUM = [
-  "Momentum beats motivation.",
+  ">> Momentum beats motivation.",
 
-  "One completed task changes the rest of the day.",
+  ">> One task changes the rest of the day.",
 
-  "Keep moving.",
+  ">> Keep moving.",
 
-  "Stay consistent.",
+  ">> Stay consistent.",
 
-  "Progress compounds.",
+  ">> Progress compounds.",
 ];
 
 const DISTRACTION = [
-  "Close social media and finish one task.",
+  ">> Close social media. Finish one task.",
 
-  "Instagram will still be there later.",
+  ">> It will still be there later.",
 
-  "One task now. Scroll later.",
+  ">> One task now. Scroll later.",
 
-  "Five focused minutes is enough to restart.",
+  ">> Five focused minutes is enough to restart.",
 
-  "Break the scrolling cycle.",
+  ">> Break the scrolling cycle.",
 ];
 
 const CRITICAL = [
-  "You're running out of time.",
+  ">> Running out of time.",
 
-  "Today's plan is slipping.",
+  ">> Today's plan is slipping.",
 
-  "Let's recover before it's too late.",
+  ">> Let's recover before it's too late.",
 
-  "One task right now can completely change today.",
+  ">> One task right now can change today.",
 ];
 
 module.exports = {
