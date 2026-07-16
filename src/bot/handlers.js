@@ -20,6 +20,8 @@ const {
   buildUnknownResponse,
   buildDailyTaskAddedResponse,
   buildDailyStatusResponse,
+  buildRenameResponse,
+  buildDeleteTaskKeyboard,
 } = require("../services/responseBuilder");
 
 const { isFocusCommand, extractDuration } = require("../focus/focusRouter");
@@ -64,6 +66,16 @@ Send:
 - finished <task>
 - completed <task>
 
+RENAME A TASK
+Send:
+- rename <old name> to <new name>
+Example: rename Gym to Weight Training
+
+DELETE TASKS
+Send:
+- delete task
+Opens an interface to select tasks to delete.
+
 MOVE DEADLINE
 Send:
 - move (defaults to 24h)
@@ -97,6 +109,7 @@ let planRepository = null;
 let taskRepository = null;
 
 const moveSelections = new Map();
+const deleteSelections = new Map();
 
 function getUserRepository() {
   if (!userRepository) userRepository = createUserRepository();
@@ -322,6 +335,108 @@ Deadline tomorrow 8 PM`,
         const completedToday = allDailyTasks.filter((t) => t.completed).length;
 
         bot.sendMessage(msg.chat.id, buildDailyStatusResponse(allDailyTasks, completedToday));
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "RENAME": {
+        const current = await getTaskList(msg.chat.id);
+
+        if (!current) {
+          bot.sendMessage(msg.chat.id, buildNoTaskResponse());
+          break;
+        }
+
+        const renameMatch = msg.text.match(/^rename\s+(.+?)\s+to\s+(.+)$/i)
+          || msg.text.match(/^update task\s+(.+?)\s+to\s+(.+)$/i);
+
+        if (!renameMatch) {
+          bot.sendMessage(
+            msg.chat.id,
+            "Invalid format.\n\nExample:\nrename Gym to Weight Training",
+          );
+          break;
+        }
+
+        const oldName = renameMatch[1].trim().toLowerCase();
+        const newName = renameMatch[2].trim();
+
+        if (!newName) {
+          bot.sendMessage(msg.chat.id, "Please provide a new name after 'to'.");
+          break;
+        }
+
+        let renamed = false;
+        let actualOldName = "";
+
+        for (const task of current.tasks) {
+          if (task.text.toLowerCase().includes(oldName)) {
+            actualOldName = task.text;
+
+            await getTaskRepository().update(task.dbId, { title: newName });
+            renamed = true;
+            break;
+          }
+        }
+
+        if (!renamed) {
+          bot.sendMessage(msg.chat.id, `Couldn't find a task matching "${renameMatch[1].trim()}".`);
+          break;
+        }
+
+        const updatedTasks = current.tasks.map((t) =>
+          t.text === actualOldName ? { ...t, text: newName, title: newName } : t,
+        );
+
+        await updateTaskList({ tasks: updatedTasks }, msg.chat.id);
+
+        logger.success("RENAME", `"${actualOldName}" renamed to "${newName}"`);
+
+        bot.sendMessage(msg.chat.id, buildRenameResponse(actualOldName, newName));
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "DELETE_TASK": {
+        const current = await getTaskList(msg.chat.id);
+
+        if (!current) {
+          bot.sendMessage(msg.chat.id, buildNoTaskResponse());
+          break;
+        }
+
+        const remaining = current.tasks.filter((t) => !t.completed);
+
+        if (remaining.length === 0) {
+          bot.sendMessage(msg.chat.id, "No tasks to delete.");
+          break;
+        }
+
+        const selectedIds = new Set();
+
+        deleteSelections.set(msg.chat.id, {
+          tasks: remaining,
+          selected: selectedIds,
+        });
+
+        const keyboard = buildDeleteTaskKeyboard(remaining, selectedIds, msg.chat.id);
+
+        let delMsg = "";
+        delMsg += "Delete Tasks\n";
+        delMsg += "────────────────────\n\n";
+        delMsg += `Select tasks to delete.\n\n`;
+        delMsg += `Tap tasks to toggle selection.\n`;
+        delMsg += `Then confirm deletion.`;
+
+        bot.sendMessage(msg.chat.id, delMsg, {
+          reply_markup: {
+            inline_keyboard: keyboard,
+          },
+        });
 
         break;
       }
@@ -891,6 +1006,161 @@ Deadline tomorrow 8 PM`,
 
       bot.editMessageText(
         `Tasks Moved\n────────────────────\n\nMoved ${selectedIds.length} task(s) to a new plan.\nNew Deadline : ${formatToIST(newDeadline)} IST\n\nRemaining in current plan : ${remainingInCurrent.length} task(s)`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        },
+      );
+      return;
+    }
+
+    // =====================================================
+    // Delete Task Action Handlers
+    // =====================================================
+
+    if (data === "deltask_cancel") {
+      const session = deleteSelections.get(chatId);
+      if (session) {
+        deleteSelections.delete(chatId);
+      }
+
+      bot.editMessageText("Delete cancelled. No tasks were removed.", {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      return;
+    }
+
+    if (data.startsWith("deltask_toggle:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+      const taskDbId = parts[2];
+
+      if (String(chatId) !== String(targetChatId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const session = deleteSelections.get(chatId);
+
+      if (!session) {
+        bot.answerCallbackQuery(query.id, { text: "Session expired. Send 'delete task' again." });
+        return;
+      }
+
+      if (session.selected.has(taskDbId)) {
+        session.selected.delete(taskDbId);
+      } else {
+        session.selected.add(taskDbId);
+      }
+
+      const keyboard = buildDeleteTaskKeyboard(session.tasks, session.selected, chatId);
+
+      const selectedCount = session.selected.size;
+      const totalTasks = session.tasks.length;
+
+      let delMsg = "";
+      delMsg += "Delete Tasks\n";
+      delMsg += "────────────────────\n\n";
+      delMsg += `Select tasks to delete.\n\n`;
+      delMsg += `Selected : ${selectedCount}/${totalTasks} task(s)\n`;
+      delMsg += `Tap tasks to toggle. Then confirm.`;
+
+      bot.editMessageText(delMsg, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        reply_markup: {
+          inline_keyboard: keyboard,
+        },
+      });
+
+      return;
+    }
+
+    if (data.startsWith("deltask_go:")) {
+      const parts = data.split(":");
+      const targetChatId = parts[1];
+
+      if (String(chatId) !== String(targetChatId)) {
+        bot.answerCallbackQuery(query.id, { text: "This is not your action." });
+        return;
+      }
+
+      const session = deleteSelections.get(chatId);
+
+      if (!session) {
+        bot.editMessageText("Session expired. Send 'delete task' again.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      const selectedIds = [...session.selected];
+
+      if (selectedIds.length === 0) {
+        bot.answerCallbackQuery(query.id, { text: "No tasks selected." });
+        return;
+      }
+
+      const current = await getTaskList(chatId);
+
+      if (!current) {
+        deleteSelections.delete(chatId);
+        bot.editMessageText("No active task list found.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+      }
+
+      await getTaskRepository().deleteTasks(selectedIds);
+
+      const remainingTasks = current.tasks.filter(
+        (t) => !selectedIds.includes(t.dbId),
+      );
+
+      if (remainingTasks.length === 0) {
+        await getPlanRepository().markCompleted(current.dbId);
+        deleteSelections.delete(chatId);
+
+        await clearTaskList(chatId);
+
+        logger.success("HANDLER", `${selectedIds.length} task(s) deleted. Plan complete.`);
+
+        bot.editMessageText(
+          `Tasks Deleted\n────────────────────\n\nDeleted ${selectedIds.length} task(s).\nAll tasks removed. Send new tasks to start fresh.`,
+          {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+          },
+        );
+        return;
+      }
+
+      const remapped = remainingTasks.map((t, i) => ({
+        id: i + 1,
+        dbId: t.dbId,
+        text: t.text,
+        title: t.title,
+        completed: t.completed,
+        completedAt: t.completedAt,
+        priority: t.priority,
+        isDaily: t.isDaily,
+      }));
+
+      await updateTaskList({
+        tasks: remapped,
+        total: remapped.length,
+        completed: remapped.filter((t) => t.completed).length,
+      }, chatId);
+
+      deleteSelections.delete(chatId);
+
+      logger.success("HANDLER", `${selectedIds.length} task(s) deleted for user ${userId}`);
+
+      bot.editMessageText(
+        `Tasks Deleted\n────────────────────\n\nDeleted ${selectedIds.length} task(s).\nRemaining : ${remainingTasks.length} task(s)`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,

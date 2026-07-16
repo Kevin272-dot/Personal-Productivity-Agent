@@ -237,6 +237,46 @@ function buildDailyStatusResponse(dailyTasks, completedToday) {
   return message;
 }
 
+function buildRenameResponse(oldName, newName) {
+  let message = "";
+
+  message += "Task Renamed\n";
+  message += "────────────────────\n\n";
+  message += `"${oldName}"\n`;
+  message += `  → ${newName}\n`;
+
+  return message;
+}
+
+function buildDeleteTaskKeyboard(tasks, selected, chatId) {
+  const keyboard = [];
+
+  for (const task of tasks) {
+    const isSelected = selected.has(task.dbId);
+    const checkbox = isSelected ? "[x]" : "[ ]";
+    keyboard.push([
+      {
+        text: `${checkbox} ${task.text}`,
+        callback_data: `deltask_toggle:${chatId}:${task.dbId}`,
+      },
+    ]);
+  }
+
+  const selectedCount = selected.size;
+  keyboard.push([
+    {
+      text: `Delete (${selectedCount} task${selectedCount !== 1 ? "s" : ""})`,
+      callback_data: `deltask_go:${chatId}`,
+    },
+    {
+      text: "Cancel",
+      callback_data: "deltask_cancel",
+    },
+  ]);
+
+  return keyboard;
+}
+
 module.exports = {
   buildTaskListResponse,
   buildCurrentTasksResponse,
@@ -246,4 +286,6 @@ module.exports = {
   buildUnknownResponse,
   buildDailyTaskAddedResponse,
   buildDailyStatusResponse,
+  buildRenameResponse,
+  buildDeleteTaskKeyboard,
 };

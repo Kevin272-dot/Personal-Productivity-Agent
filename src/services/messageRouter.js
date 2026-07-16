@@ -14,6 +14,14 @@ function classifyMessage(text) {
     return "DELETE_DAYS";
   }
 
+  if (lower.startsWith("delete task") || lower.startsWith("remove task")) {
+    return "DELETE_TASK";
+  }
+
+  if (lower.startsWith("rename ") || lower.startsWith("update task ")) {
+    return "RENAME";
+  }
+
   if (lower === "move" || lower.startsWith("move ")) {
     return "MOVE";
   }
