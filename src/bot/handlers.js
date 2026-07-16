@@ -697,6 +697,7 @@ Deadline tomorrow 8 PM`,
   // =====================================================
 
   bot.on("callback_query", async (query) => {
+    try {
     const data = query.data;
     const chatId = query.message.chat.id;
     const userId = query.from.id;
@@ -1167,6 +1168,9 @@ Deadline tomorrow 8 PM`,
         },
       );
       return;
+    }
+    } catch (error) {
+      logger.error("CALLBACK", `Error: ${error.message}`);
     }
   });
 }

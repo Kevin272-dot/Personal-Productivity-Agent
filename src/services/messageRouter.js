@@ -47,12 +47,34 @@ function classifyMessage(text) {
   }
 
   if (
+    lower.startsWith("tasks:") ||
+    lower.startsWith("tasks ") ||
+    lower.startsWith("task:") ||
+    lower.startsWith("task ") ||
+    lower.startsWith("plan:") ||
+    lower.startsWith("plan ") ||
+    lower.startsWith("todo:") ||
+    lower.startsWith("todo ") ||
     lower.includes("today") ||
     lower.includes("tasks") ||
     lower.includes("todo") ||
     lower.includes("need to finish")
   ) {
     return "TASK_LIST";
+  }
+
+  const lines = lower.split("\n").map((l) => l.trim()).filter((l) => l);
+  if (lines.length >= 2) {
+    const hasDeadline = lines.some((l) =>
+      /deadline|due|by\s+(tomorrow|today|next|mon|tue|wed|thu|fri|sat|sun|\d)/i.test(l),
+    );
+    const hasTimeRef = lines.some((l) =>
+      /\d+\s*(am|pm|hours?|hrs?|days?|minutes?|mins?)/i.test(l) ||
+      /tomorrow|tonight|today|morning|evening|night/i.test(l),
+    );
+    if (hasDeadline || (hasTimeRef && lines.length >= 3)) {
+      return "TASK_LIST";
+    }
   }
 
   if (
