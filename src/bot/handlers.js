@@ -187,6 +187,7 @@ Deadline tomorrow 8 PM`,
   });
 
   bot.on("message", async (msg) => {
+    try {
     if (!msg.text) return;
 
     if (msg.text.startsWith("/")) return;
@@ -689,6 +690,12 @@ Deadline tomorrow 8 PM`,
 
         bot.sendMessage(msg.chat.id, buildUnknownResponse());
       }
+    }
+    } catch (error) {
+      logger.error("HANDLER", `Error: ${error.message}`);
+      try {
+        bot.sendMessage(msg.chat.id, "Something went wrong. Please try again.");
+      } catch (_) {}
     }
   });
 
