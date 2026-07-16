@@ -38,6 +38,7 @@ model Task {
 	priority      String         @default("normal")
 	completed     Boolean        @default(false)
 	completedAt   DateTime?
+	isDaily       Boolean        @default(false)
 	createdAt     DateTime       @default(now())
 	dailyPlanId   String
 	dailyPlan     DailyPlan      @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)

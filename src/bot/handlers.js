@@ -1,5 +1,5 @@
 const { parseMessage } = require("../services/taskParser");
-const { setTaskList, getTaskList, clearTaskList, updateTaskList } = require("../services/taskManager");
+const { setTaskList, getTaskList, clearTaskList, updateTaskList, addDailyTasks, getDailyTasks, getAllDailyTasks, resetDailyTasks } = require("../services/taskManager");
 const { completeTask } = require("../services/completionService");
 const { classifyMessage } = require("../services/messageRouter");
 const { getNextTask } = require("../services/taskSelector");
@@ -18,6 +18,8 @@ const {
   buildGreetingResponse,
   buildNoTaskResponse,
   buildUnknownResponse,
+  buildDailyTaskAddedResponse,
+  buildDailyStatusResponse,
 } = require("../services/responseBuilder");
 
 const { isFocusCommand, extractDuration } = require("../focus/focusRouter");
@@ -40,6 +42,15 @@ Today's Tasks
 Leetcode
 Gym
 Deadline tomorrow 8 PM
+
+DAILY TASKS
+Send to add recurring tasks (reminded every day):
+daily tasks
+Gym
+Read 30 pages
+
+Check daily status:
+daily status
 
 CHECK STATUS
 Send any of:
@@ -237,7 +248,7 @@ Deadline tomorrow 8 PM`,
       return;
     }
 
-    const activeSession = getSession();
+    const activeSession = getSession(msg.chat.id);
 
     if (activeSession?.awaitingCompletion) {
       const result = await handleFocusReply(msg.text, msg.chat.id);
@@ -277,6 +288,44 @@ Deadline tomorrow 8 PM`,
     logger.info("ROUTER", `Detected ${messageType}`);
 
     switch (messageType) {
+      // ---------------------------------------------------
+
+      case "DAILY_TASK": {
+        const lines = msg.text.split("\n").map((l) => l.trim()).filter((l) => l);
+        const headerLine = lines[0];
+
+        const taskTexts = lines.slice(1).map((l) => l.replace(/^[-•*]\s*/, "").trim()).filter((l) => l.length > 0);
+
+        if (taskTexts.length === 0) {
+          bot.sendMessage(
+            msg.chat.id,
+            "Please provide task names after the command.\n\nExample:\ndaily tasks\nGym\nRead 30 pages",
+          );
+          break;
+        }
+
+        await resetDailyTasks(msg.chat.id);
+        const created = await addDailyTasks(msg.chat.id, taskTexts);
+
+        logger.success("DAILY_TASK", `${created.length} daily task(s) added`);
+
+        bot.sendMessage(msg.chat.id, buildDailyTaskAddedResponse(created));
+
+        break;
+      }
+
+      // ---------------------------------------------------
+
+      case "DAILY_STATUS": {
+        const allDailyTasks = await getAllDailyTasks(msg.chat.id);
+
+        const completedToday = allDailyTasks.filter((t) => t.completed).length;
+
+        bot.sendMessage(msg.chat.id, buildDailyStatusResponse(allDailyTasks, completedToday));
+
+        break;
+      }
+
       // ---------------------------------------------------
 
       case "TASK_LIST": {

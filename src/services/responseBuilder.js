@@ -178,6 +178,65 @@ Finished Gym
 Focus 45`;
 }
 
+function buildDailyTaskAddedResponse(tasks) {
+  let message = "";
+
+  message += "Daily Tasks Added\n";
+  message += "────────────────────\n\n";
+
+  message += `${tasks.length} recurring task(s) added:\n\n`;
+
+  tasks.forEach((task, i) => {
+    message += `[ ] ${i + 1}. ${task.title} (daily)\n`;
+  });
+
+  message += "\nThese tasks will be reminded every day.";
+  message += "\nSend 'done <task>' to complete them.";
+
+  return message;
+}
+
+function buildDailyStatusResponse(dailyTasks, completedToday) {
+  let message = "";
+
+  message += "Daily Tasks Status\n";
+  message += "────────────────────\n\n";
+
+  if (dailyTasks.length === 0) {
+    message += "No daily tasks set.\n\n";
+    message += "Send 'daily tasks' followed by task names to add recurring tasks.\n\n";
+    message += "Example:\n";
+    message += "daily tasks\nGym\nRead 30 pages";
+    return message;
+  }
+
+  message += `Total : ${dailyTasks.length}\n`;
+  message += `Done  : ${completedToday}\n`;
+  message += `Left  : ${dailyTasks.length - completedToday}\n\n`;
+
+  const pending = dailyTasks.filter((t) => !t.completed);
+  const done = dailyTasks.filter((t) => t.completed);
+
+  if (pending.length > 0) {
+    message += "Pending\n";
+    message += "────────────────────\n";
+    pending.forEach((task) => {
+      message += `[ ] ${task.id}. ${task.text}\n`;
+    });
+    message += "\n";
+  }
+
+  if (done.length > 0) {
+    message += "Completed\n";
+    message += "────────────────────\n";
+    done.forEach((task) => {
+      message += `[x] ${task.id}. ${task.text}\n`;
+    });
+  }
+
+  return message;
+}
+
 module.exports = {
   buildTaskListResponse,
   buildCurrentTasksResponse,
@@ -185,4 +244,6 @@ module.exports = {
   buildGreetingResponse,
   buildNoTaskResponse,
   buildUnknownResponse,
+  buildDailyTaskAddedResponse,
+  buildDailyStatusResponse,
 };

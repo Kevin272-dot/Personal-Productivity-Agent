@@ -15,7 +15,7 @@ function createPlanRepository(prismaClient = getPrismaClient()) {
     `;
 
     const tasks = await client`
-      select id, title, priority, completed, completed_at as "completedAt", created_at as "createdAt", daily_plan_id as "dailyPlanId"
+      select id, title, priority, completed, completed_at as "completedAt", is_daily as "isDaily", created_at as "createdAt", daily_plan_id as "dailyPlanId"
       from tasks
       where daily_plan_id = ${planRow.id}
       order by created_at asc, id asc
@@ -54,8 +54,8 @@ function createPlanRepository(prismaClient = getPrismaClient()) {
           const taskId = task.id ?? randomUUID();
 
           await tx`
-            insert into tasks (id, title, priority, completed, completed_at, created_at, daily_plan_id)
-            values (${taskId}, ${task.title}, ${task.priority ?? "normal"}, ${Boolean(task.completed)}, ${task.completedAt ?? null}, ${task.createdAt ?? new Date()}, ${planRow.id})
+            insert into tasks (id, title, priority, completed, completed_at, is_daily, created_at, daily_plan_id)
+            values (${taskId}, ${task.title}, ${task.priority ?? "normal"}, ${Boolean(task.completed)}, ${task.completedAt ?? null}, ${Boolean(task.isDaily)}, ${task.createdAt ?? new Date()}, ${planRow.id})
           `;
         }
 
@@ -192,6 +192,53 @@ function createPlanRepository(prismaClient = getPrismaClient()) {
         update daily_plans
         set completed = true
         where id = ${id}
+      `;
+    },
+
+    findDailyPlanByUserId(userId) {
+      return prismaClient`
+        select dp.id, dp.deadline, dp.completed, dp.created_at, dp.user_id
+        from daily_plans dp
+        join tasks t on t.daily_plan_id = dp.id
+        where dp.user_id = ${userId} and t.is_daily = true
+        order by dp.created_at desc
+        limit 1
+      `.then(([planRow]) => planRow ? hydratePlan(prismaClient, planRow) : null);
+    },
+
+    ensureDailyPlan(userId) {
+      return prismaClient.begin(async (tx) => {
+        const [existing] = await tx`
+          select dp.id from daily_plans dp
+          join tasks t on t.daily_plan_id = dp.id
+          where dp.user_id = ${userId} and t.is_daily = true
+          order by dp.created_at desc
+          limit 1
+        `;
+
+        if (existing) {
+          return existing.id;
+        }
+
+        const planId = randomUUID();
+        await tx`
+          insert into daily_plans (id, deadline, completed, created_at, user_id)
+          values (${planId}, ${new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)}, false, ${new Date()}, ${userId})
+        `;
+
+        return planId;
+      });
+    },
+
+    resetDailyTasks(userId) {
+      return prismaClient`
+        update tasks
+        set completed = false, completed_at = null
+        from daily_plans
+        where tasks.daily_plan_id = daily_plans.id
+          and daily_plans.user_id = ${userId}
+          and tasks.is_daily = true
+          and tasks.completed = true
       `;
     },
   };

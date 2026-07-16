@@ -40,7 +40,7 @@ function isNegativeResponse(text) {
 }
 
 async function handleFocusReply(message, chatId) {
-  const session = getSession();
+  const session = getSession(chatId);
 
   if (!session || !session.awaitingCompletion) {
     return null;
@@ -54,8 +54,8 @@ async function handleFocusReply(message, chatId) {
     const focusTask = taskList.tasks.find((t) => t.dbId === session.task.dbId);
 
     if (focusTask && focusTask.completed) {
-      await completeSession();
-      endSession();
+      await completeSession(chatId);
+      endSession(chatId);
 
       return {
         handled: true,
@@ -70,8 +70,8 @@ async function handleFocusReply(message, chatId) {
   if (isPositiveResponse(message)) {
     const result = await completeTask(session.task.text, chatId);
 
-    await completeSession();
-    endSession();
+    await completeSession(chatId);
+    endSession(chatId);
 
     return {
       handled: true,
@@ -82,8 +82,8 @@ async function handleFocusReply(message, chatId) {
   }
 
   if (isNegativeResponse(message)) {
-    await completeSession();
-    endSession();
+    await completeSession(chatId);
+    endSession(chatId);
 
     return {
       handled: true,

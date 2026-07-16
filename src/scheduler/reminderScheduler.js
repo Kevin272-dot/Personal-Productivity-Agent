@@ -1,8 +1,8 @@
 const cron = require("node-cron");
 
-const { REMINDER_INTERVALS, SCHEDULER_CRON, OVERDUE_PROMPT_COOLDOWN_MS } = require("../config/constants");
+const { REMINDER_INTERVALS, SCHEDULER_CRON, OVERDUE_PROMPT_COOLDOWN_MS, DAILY_REMINDER_HOUR } = require("../config/constants");
 
-const { getTaskList, updateTaskList } = require("../services/taskManager");
+const { getTaskList, updateTaskList, getAllActiveTaskLists, getDailyTasks, resetDailyTasks } = require("../services/taskManager");
 
 const { calculateReminder } = require("../services/reminderService");
 
@@ -112,48 +112,121 @@ async function sendOverduePrompt(bot, taskList, stats) {
 function startReminderScheduler(bot) {
   logger.success("SCHEDULER", "Reminder scheduler started.");
 
+  let lastDailyResetDate = null;
+
   cron.schedule(SCHEDULER_CRON, async () => {
     try {
       logger.info("SCHEDULER", "Running reminder cycle...");
 
-      const taskList = await getTaskList();
+      const now = new Date();
+      const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+      const istMinutes = (utcMinutes + 5 * 60 + 30) % (24 * 60);
+      const istHour = Math.floor(istMinutes / 60);
+      const istDate = now.toISOString().slice(0, 10);
 
-      if (!taskList) {
-        logger.info("SCHEDULER", "No active task list.");
-        return;
-      }
+      if (lastDailyResetDate !== istDate && istHour >= DAILY_REMINDER_HOUR) {
+        lastDailyResetDate = istDate;
+        logger.info("SCHEDULER", "New day detected. Resetting daily tasks.");
 
-      const stats = calculateReminder(taskList);
-
-      if (!stats) {
-        logger.warn("SCHEDULER", "Reminder calculation failed.");
-        return;
-      }
-
-      if (stats.remainingTasks === 0) {
-        logger.success("SCHEDULER", "All tasks completed.");
-        return;
-      }
-
-      if (stats.overdue) {
-        if (shouldSendOverduePrompt(taskList)) {
-          await sendOverduePrompt(bot, taskList, stats);
-        } else {
-          logger.info("SCHEDULER", "Overdue prompt skipped (cooldown).");
+        const allChats = getAllActiveTaskLists();
+        for (const tl of allChats) {
+          try {
+            await resetDailyTasks(tl.chatId);
+          } catch (e) {
+            logger.error("SCHEDULER", `Failed to reset daily tasks for ${tl.chatId}: ${e.message}`);
+          }
         }
-        return;
       }
 
-      if (!shouldSendNow(taskList, stats.urgency, stats.remainingHours)) {
-        logger.info("SCHEDULER", "Reminder skipped (cooldown).");
-        return;
+      const allTaskLists = getAllActiveTaskLists();
+
+      if (allTaskLists.length === 0) {
+        logger.info("SCHEDULER", "No active task lists.");
+      } else {
+        for (const taskList of allTaskLists) {
+          try {
+            const stats = calculateReminder(taskList);
+
+            if (!stats) {
+              logger.warn("SCHEDULER", "Reminder calculation failed.");
+              continue;
+            }
+
+            if (stats.remainingTasks === 0) {
+              logger.success("SCHEDULER", "All tasks completed.");
+              continue;
+            }
+
+            if (stats.overdue) {
+              if (shouldSendOverduePrompt(taskList)) {
+                await sendOverduePrompt(bot, taskList, stats);
+              } else {
+                logger.info("SCHEDULER", "Overdue prompt skipped (cooldown).");
+              }
+              continue;
+            }
+
+            if (!shouldSendNow(taskList, stats.urgency, stats.remainingHours)) {
+              logger.info("SCHEDULER", "Reminder skipped (cooldown).");
+              continue;
+            }
+
+            await sendReminder(bot, taskList, stats);
+          } catch (innerError) {
+            logger.error("SCHEDULER", `Error for chat ${taskList.chatId}: ${innerError.message}`);
+          }
+        }
       }
 
-      await sendReminder(bot, taskList, stats);
+      if (istHour === DAILY_REMINDER_HOUR) {
+        await sendDailyTaskReminders(bot);
+      }
     } catch (error) {
       logger.error("SCHEDULER", error.message);
     }
   });
+}
+
+async function sendDailyTaskReminders(bot) {
+  try {
+    const allTaskLists = getAllActiveTaskLists();
+
+    const seenChats = new Set();
+
+    for (const taskList of allTaskLists) {
+      const chatId = taskList.chatId;
+
+      if (seenChats.has(String(chatId))) continue;
+      seenChats.add(String(chatId));
+
+      try {
+        const dailyTasks = await getDailyTasks(chatId);
+
+        if (dailyTasks.length === 0) continue;
+
+        const pending = dailyTasks.filter((t) => !t.completed);
+
+        if (pending.length === 0) continue;
+
+        let message = "Daily Tasks Reminder\n";
+        message += "────────────────────\n\n";
+        message += `You have ${pending.length} pending daily task(s):\n\n`;
+
+        pending.forEach((task) => {
+          message += `[ ] ${task.id}. ${task.text}\n`;
+        });
+
+        message += "\nSend 'done <task>' to mark them complete.";
+
+        await bot.sendMessage(chatId, message);
+        logger.success("SCHEDULER", `Daily task reminder sent to ${chatId}.`);
+      } catch (innerError) {
+        logger.error("SCHEDULER", `Error sending daily reminder to ${chatId}: ${innerError.message}`);
+      }
+    }
+  } catch (error) {
+    logger.error("SCHEDULER", `Daily reminder error: ${error.message}`);
+  }
 }
 
 module.exports = {

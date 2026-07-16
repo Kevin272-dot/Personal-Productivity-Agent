@@ -1,8 +1,10 @@
 const { createUserRepository } = require("../../repositories/userRepository");
 const { createPlanRepository } = require("../../repositories/planRepository");
+const { createTaskRepository } = require("../../repositories/taskRepository");
 
 let userRepository = null;
 let planRepository = null;
+let taskRepository = null;
 
 function getUserRepository() {
   if (!userRepository) {
@@ -20,7 +22,15 @@ function getPlanRepository() {
   return planRepository;
 }
 
-let activeTaskList = null;
+function getTaskRepository() {
+  if (!taskRepository) {
+    taskRepository = createTaskRepository();
+  }
+
+  return taskRepository;
+}
+
+const activeTaskLists = new Map();
 
 function mapTask(task, index) {
   return {
@@ -31,6 +41,7 @@ function mapTask(task, index) {
     priority: task.priority,
     completed: task.completed,
     completedAt: task.completedAt,
+    isDaily: Boolean(task.isDaily),
   };
 }
 
@@ -69,6 +80,11 @@ async function persistPlan(taskList) {
     timezone: taskList.timezone || "UTC",
   });
 
+  const existing = activeTaskLists.get(String(taskList.chatId));
+  if (existing && existing.dbId) {
+    await getPlanRepository().markCompleted(existing.dbId);
+  }
+
   const plan = await getPlanRepository().createPlan({
     deadline: taskList.deadline,
     completed: false,
@@ -80,6 +96,7 @@ async function persistPlan(taskList) {
         completed: Boolean(task.completed),
         completedAt: task.completedAt || null,
         createdAt: task.createdAt || new Date(Date.now() + index),
+        isDaily: Boolean(task.isDaily),
       })),
     },
   });
@@ -88,20 +105,22 @@ async function persistPlan(taskList) {
 }
 
 async function setTaskList(taskList) {
-  activeTaskList = await persistPlan(taskList);
-  return activeTaskList;
+  const mapped = await persistPlan(taskList);
+  activeTaskLists.set(String(taskList.chatId), mapped);
+  return mapped;
 }
 
 async function getTaskList(chatId) {
-  if (
-    activeTaskList &&
-    (!chatId || String(activeTaskList.chatId) === String(chatId))
-  ) {
-    return activeTaskList;
+  if (!chatId) {
+    const first = activeTaskLists.values().next().value;
+    return first || null;
   }
 
-  if (!chatId) {
-    return activeTaskList;
+  const key = String(chatId);
+
+  const cached = activeTaskLists.get(key);
+  if (cached) {
+    return cached;
   }
 
   const user = await getUserRepository().findByTelegramId(chatId);
@@ -111,28 +130,44 @@ async function getTaskList(chatId) {
   }
 
   const plan = await getPlanRepository().getActivePlan(user.id);
+  const mapped = mapPlanToTaskList(plan);
 
-  activeTaskList = mapPlanToTaskList(plan);
-  return activeTaskList;
+  if (mapped) {
+    activeTaskLists.set(key, mapped);
+  }
+
+  return mapped;
 }
 
-async function updateTaskList(patch) {
-  if (!activeTaskList) return null;
+async function updateTaskList(patch, chatId) {
+  let target;
+
+  if (chatId) {
+    target = activeTaskLists.get(String(chatId));
+  }
+
+  if (!target) {
+    target = activeTaskLists.values().next().value;
+  }
+
+  if (!target) return null;
 
   const dbUpdate = {};
   if (patch.completed !== undefined) dbUpdate.completed = patch.completed;
   if (patch.deadline !== undefined) dbUpdate.deadline = patch.deadline;
 
   if (Object.keys(dbUpdate).length > 0) {
-    await getPlanRepository().update(activeTaskList.dbId, dbUpdate);
+    await getPlanRepository().update(target.dbId, dbUpdate);
   }
 
-  activeTaskList = {
-    ...activeTaskList,
+  const updated = {
+    ...target,
     ...patch,
   };
 
-  return activeTaskList;
+  activeTaskLists.set(String(target.chatId), updated);
+
+  return updated;
 }
 
 async function clearTaskList(chatId) {
@@ -143,9 +178,86 @@ async function clearTaskList(chatId) {
   }
 
   await getPlanRepository().markCompleted(taskList.dbId);
-  activeTaskList = null;
+  activeTaskLists.delete(String(chatId));
 
   return taskList;
+}
+
+function getAllActiveTaskLists() {
+  return [...activeTaskLists.values()];
+}
+
+async function addDailyTasks(chatId, taskTexts) {
+  const user = await getUserRepository().upsertByTelegramId(chatId, {
+    timezone: "Asia/Kolkata",
+  });
+
+  const dailyPlanId = await getPlanRepository().ensureDailyPlan(user.id);
+
+  const created = [];
+
+  for (const text of taskTexts) {
+    const task = await getTaskRepository().createTask({
+      title: text,
+      priority: "normal",
+      completed: false,
+      isDaily: true,
+      dailyPlanId,
+    });
+    created.push(task);
+  }
+
+  return created;
+}
+
+async function getDailyTasks(chatId) {
+  const user = await getUserRepository().findByTelegramId(chatId);
+
+  if (!user) {
+    return [];
+  }
+
+  const tasks = await getTaskRepository().findIncompleteDailyByUserId(user.id);
+  return tasks.map((t, i) => ({
+    id: i + 1,
+    dbId: t.id,
+    text: t.title,
+    title: t.title,
+    priority: t.priority,
+    completed: t.completed,
+    completedAt: t.completedAt,
+    isDaily: true,
+  }));
+}
+
+async function getAllDailyTasks(chatId) {
+  const user = await getUserRepository().findByTelegramId(chatId);
+
+  if (!user) {
+    return [];
+  }
+
+  const tasks = await getTaskRepository().findAllDailyByUserId(user.id);
+  return tasks.map((t, i) => ({
+    id: i + 1,
+    dbId: t.id,
+    text: t.title,
+    title: t.title,
+    priority: t.priority,
+    completed: t.completed,
+    completedAt: t.completedAt,
+    isDaily: true,
+  }));
+}
+
+async function resetDailyTasks(chatId) {
+  const user = await getUserRepository().findByTelegramId(chatId);
+
+  if (!user) {
+    return;
+  }
+
+  await getPlanRepository().resetDailyTasks(user.id);
 }
 
 module.exports = {
@@ -154,4 +266,9 @@ module.exports = {
   updateTaskList,
   clearTaskList,
   mapPlanToTaskList,
+  getAllActiveTaskLists,
+  addDailyTasks,
+  getDailyTasks,
+  getAllDailyTasks,
+  resetDailyTasks,
 };

@@ -42,8 +42,8 @@ async function isTaskAlreadyCompleted(session) {
 async function autoEndSession(bot, session, reason) {
   logger.success("FOCUS", `Auto-ending session: ${reason}`);
 
-  await completeSession();
-  endSession();
+  await completeSession(session.chatId);
+  endSession(session.chatId);
   clearAwaitingCompletionTimer();
 
   await bot.sendMessage(
@@ -68,7 +68,7 @@ function scheduleSession(bot, session) {
     if (elapsed === halfwayTime) continue;
 
     setTimeout(async () => {
-      const current = getSession();
+      const current = getSession(session.chatId);
 
       if (!current || current.completed) return;
 
@@ -90,7 +90,7 @@ function scheduleSession(bot, session) {
   // ------------------------
 
   setTimeout(async () => {
-    const current = getSession();
+    const current = getSession(session.chatId);
 
     if (!current) return;
     if (current.completed) return;
@@ -100,7 +100,7 @@ function scheduleSession(bot, session) {
       return;
     }
 
-    markHalfwaySent();
+    markHalfwaySent(session.chatId);
 
     logger.info("FOCUS", "Sending halfway reminder.");
 
@@ -112,7 +112,7 @@ function scheduleSession(bot, session) {
   // ------------------------
 
   setTimeout(async () => {
-    const current = getSession();
+    const current = getSession(session.chatId);
 
     if (!current) return;
     if (current.completed) return;
@@ -122,7 +122,7 @@ function scheduleSession(bot, session) {
       return;
     }
 
-    markAwaitingCompletion();
+    markAwaitingCompletion(session.chatId);
 
     logger.success("FOCUS", "Focus session finished.");
 
@@ -130,7 +130,7 @@ function scheduleSession(bot, session) {
 
     clearAwaitingCompletionTimer();
     awaitingCompletionTimer = setTimeout(async () => {
-      const stillActive = getSession();
+      const stillActive = getSession(session.chatId);
 
       if (!stillActive || !stillActive.awaitingCompletion) return;
 

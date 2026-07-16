@@ -20,6 +20,8 @@ const TIMEZONE = "Asia/Kolkata";
 
 const OVERDUE_PROMPT_COOLDOWN_MS = 60 * 60 * 1000;
 
+const DAILY_REMINDER_HOUR = 9; // 9 AM IST
+
 module.exports = {
   ALLOWED_USERS,
   MAX_USERS,
@@ -30,4 +32,5 @@ module.exports = {
   SCHEDULER_CRON,
   TIMEZONE,
   OVERDUE_PROMPT_COOLDOWN_MS,
+  DAILY_REMINDER_HOUR,
 };

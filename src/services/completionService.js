@@ -1,4 +1,4 @@
-const { getTaskList, updateTaskList } = require("./taskManager");
+const { getTaskList, updateTaskList, getDailyTasks, getAllDailyTasks } = require("./taskManager");
 const { createTaskRepository } = require("../../repositories/taskRepository");
 const { createPlanRepository } = require("../../repositories/planRepository");
 
@@ -22,15 +22,6 @@ function getPlanRepository() {
 }
 
 async function completeTask(message, chatId) {
-  const taskList = await getTaskList(chatId);
-
-  if (!taskList) {
-    return {
-      success: false,
-      message: "No active task list found.",
-    };
-  }
-
   const lower = message.toLowerCase();
 
   const taskName = lower
@@ -40,12 +31,68 @@ async function completeTask(message, chatId) {
     .replace("complete", "")
     .trim();
 
-  for (const task of taskList.tasks) {
+  const taskList = await getTaskList(chatId);
+
+  if (taskList) {
+    for (const task of taskList.tasks) {
+      if (task.text.toLowerCase().includes(taskName)) {
+        if (task.completed) {
+          return {
+            success: false,
+            message: `"${task.text}" is already completed.`,
+          };
+        }
+
+        const completedAt = new Date();
+
+        await getTaskRepository().update(task.dbId, {
+          completed: true,
+          completedAt,
+        });
+
+        const updatedTasks = taskList.tasks.map((currentTask) =>
+          currentTask.dbId === task.dbId
+            ? {
+                ...currentTask,
+                completed: true,
+                completedAt,
+              }
+            : currentTask,
+        );
+
+        const updatedTaskList = {
+          ...taskList,
+          tasks: updatedTasks,
+          completed: updatedTasks.filter((currentTask) => currentTask.completed)
+            .length,
+        };
+
+        await updateTaskList({
+          tasks: updatedTasks,
+          completed: updatedTaskList.completed,
+        });
+
+        if (updatedTaskList.completed >= updatedTaskList.total) {
+          await getPlanRepository().markCompleted(taskList.dbId);
+        }
+
+        return {
+          success: true,
+          task,
+          taskList: updatedTaskList,
+        };
+      }
+    }
+  }
+
+  const dailyTasks = await getAllDailyTasks(chatId);
+
+  for (const task of dailyTasks) {
     if (task.text.toLowerCase().includes(taskName)) {
       if (task.completed) {
         return {
           success: false,
-          message: `"${task.text}" is already completed.`,
+          message: `"${task.text}" is already completed today.`,
         };
       }
 
@@ -56,36 +103,19 @@ async function completeTask(message, chatId) {
         completedAt,
       });
 
-      const updatedTasks = taskList.tasks.map((currentTask) =>
-        currentTask.dbId === task.dbId
-          ? {
-              ...currentTask,
-              completed: true,
-              completedAt,
-            }
-          : currentTask,
+      const updatedDaily = dailyTasks.map((t) =>
+        t.dbId === task.dbId ? { ...t, completed: true, completedAt } : t,
       );
-
-      const updatedTaskList = {
-        ...taskList,
-        tasks: updatedTasks,
-        completed: updatedTasks.filter((currentTask) => currentTask.completed)
-          .length,
-      };
-
-      await updateTaskList({
-        tasks: updatedTasks,
-        completed: updatedTaskList.completed,
-      });
-
-      if (updatedTaskList.completed >= updatedTaskList.total) {
-        await getPlanRepository().markCompleted(taskList.dbId);
-      }
 
       return {
         success: true,
         task,
-        taskList: updatedTaskList,
+        taskList: {
+          ...taskList,
+          tasks: updatedDaily,
+          total: updatedDaily.length,
+          completed: updatedDaily.filter((t) => t.completed).length,
+        },
       };
     }
   }

@@ -19,6 +19,26 @@ function classifyMessage(text) {
   }
 
   if (
+    lower.startsWith("daily task") ||
+    lower.startsWith("daily tasks") ||
+    lower.startsWith("everyday task") ||
+    lower.startsWith("everyday tasks") ||
+    lower.startsWith("add daily") ||
+    lower.startsWith("add everyday")
+  ) {
+    return "DAILY_TASK";
+  }
+
+  if (
+    lower.startsWith("my daily") ||
+    lower.startsWith("show daily") ||
+    lower === "daily status" ||
+    lower === "daily list"
+  ) {
+    return "DAILY_STATUS";
+  }
+
+  if (
     lower.includes("today") ||
     lower.includes("tasks") ||
     lower.includes("todo") ||

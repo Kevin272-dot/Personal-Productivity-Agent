@@ -10,19 +10,23 @@ function getFocusRepository() {
   return focusRepository;
 }
 
-let activeSession = null;
+const activeSessions = new Map();
 
 function startSession(session) {
-  if (activeSession) {
+  const key = String(session.chatId);
+
+  if (activeSessions.has(key)) {
     return Promise.resolve(false);
   }
 
-  activeSession = {
+  const sess = {
     ...session,
     awaitingCompletion: false,
     halfwaySent: false,
     completed: false,
   };
+
+  activeSessions.set(key, sess);
 
   return getFocusRepository()
     .create({
@@ -33,51 +37,66 @@ function startSession(session) {
       completed: false,
     })
     .then((savedSession) => {
-      activeSession.dbId = savedSession.id;
+      sess.dbId = savedSession.id;
       return true;
     })
     .catch(() => {
-      activeSession = null;
+      activeSessions.delete(key);
       return false;
     });
 }
 
-function getSession() {
-  return activeSession;
+function getSession(chatId) {
+  if (chatId) {
+    return activeSessions.get(String(chatId)) || null;
+  }
+
+  const first = activeSessions.values().next().value;
+  return first || null;
 }
 
-function isSessionActive() {
-  return activeSession !== null;
+function isSessionActive(chatId) {
+  if (chatId) {
+    return activeSessions.has(String(chatId));
+  }
+
+  return activeSessions.size > 0;
 }
 
-function markHalfwaySent() {
-  if (!activeSession) return;
-
-  activeSession.halfwaySent = true;
+function markHalfwaySent(chatId) {
+  const sess = chatId ? activeSessions.get(String(chatId)) : activeSessions.values().next().value;
+  if (!sess) return;
+  sess.halfwaySent = true;
 }
 
-function markAwaitingCompletion() {
-  if (!activeSession) return;
-
-  activeSession.awaitingCompletion = true;
+function markAwaitingCompletion(chatId) {
+  const sess = chatId ? activeSessions.get(String(chatId)) : activeSessions.values().next().value;
+  if (!sess) return;
+  sess.awaitingCompletion = true;
 }
 
-async function completeSession() {
-  if (!activeSession) return;
+async function completeSession(chatId) {
+  const sess = chatId ? activeSessions.get(String(chatId)) : activeSessions.values().next().value;
+  if (!sess) return;
 
-  activeSession.completed = true;
-  activeSession.endedAt = new Date();
+  sess.completed = true;
+  sess.endedAt = new Date();
 
-  if (activeSession.dbId) {
-    await getFocusRepository().update(activeSession.dbId, {
+  if (sess.dbId) {
+    await getFocusRepository().update(sess.dbId, {
       completed: true,
-      endedAt: activeSession.endedAt,
+      endedAt: sess.endedAt,
     });
   }
 }
 
-function endSession() {
-  activeSession = null;
+function endSession(chatId) {
+  if (chatId) {
+    activeSessions.delete(String(chatId));
+  } else {
+    const first = activeSessions.keys().next().value;
+    if (first) activeSessions.delete(first);
+  }
 }
 
 module.exports = {

@@ -20,6 +20,7 @@ create table if not exists tasks (
   priority text not null default 'normal',
   completed boolean not null default false,
   completed_at timestamptz,
+  is_daily boolean not null default false,
   created_at timestamptz not null default now(),
   daily_plan_id text not null references daily_plans(id) on delete cascade
 );
